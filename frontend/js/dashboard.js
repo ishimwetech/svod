@@ -1,381 +1,645 @@
-'use strict';
-const BASE = window.location.origin;
-const fmt  = n => n==null?'—':new Intl.NumberFormat('en-US').format(Math.round(n));
-const fmtM = n => { if(!n)return'0'; if(n>=1e9)return(n/1e9).toFixed(1)+'B'; if(n>=1e6)return(n/1e6).toFixed(1)+'M'; if(n>=1e3)return(n/1e3).toFixed(0)+'K'; return String(n); };
-const $  = id => document.getElementById(id);
-const $$ = s  => document.querySelectorAll(s);
-
-Chart.defaults.font.family = "'Lato',Arial,sans-serif";
-Chart.defaults.color = '#555';
-const TT = { backgroundColor:'#083050', padding:12, cornerRadius:2, titleFont:{size:12,weight:'700'}, bodyFont:{size:12} };
-
-const PAL = ['#083050','#F7941F','#1a9e5c','#2e86c1','#8b0000','#7d3c98','#ca6f1e','#148f77','#943126','#1f618d','#196f3d','#d4ac0d','#515a5a','#e74c3c','#9b59b6'];
-const SEG = ['#F7941F','#083050','#1a9e5c','#2e86c1','#9b59b6'];
-
-const LOGOS = {
-  'Netflix':'netflix.com','Amazon Prime Video':'amazon.com','Hulu':'hulu.com',
-  'Disney+':'disneyplus.com','HBO Max (2020-2023)':'hbomax.com',
-  'Paramount+':'paramountplus.com','ESPN D2C':'espn.com','Apple TV+':'tv.apple.com',
-  'Peacock Premium':'peacocktv.com','Discovery+':'discoveryplus.com',
-  'YouTube TV USA':'tv.youtube.com','YouTube Premium':'youtube.com',
-  'Starz':'starz.com','Showtime Streaming':'showtime.com','Crunchyroll':'crunchyroll.com',
-  'Sling TV':'sling.com','Fubo.tv USA':'fubo.tv','NBA League Pass':'nba.com',
-  'MLB.TV':'mlb.com','AMC Plus':'amcplus.com','Noggin':'noggin.com',
-  'Philo TV':'philo.com','BET+':'bet.com','Britbox':'britbox.com',
-  'Acorn TV':'acorn.tv','Shudder':'shudder.com','DirecTV Stream':'directv.com',
-  'Fox Nation':'foxnation.com','Dazn':'dazn.com','Hallmark+':'hallmarkchannel.com',
-  'CuriosityStream':'curiositystream.com','Mubi':'mubi.com','Dropout':'dropout.tv',
-  'Fox Sports':'foxsports.com','Frndly TV':'frndlytv.com',
-};
-const fav = d => `https://www.google.com/s2/favicons?domain=${d}&sz=32`;
-
+/* ═══════════════════════════════════════════════════════════════════════
+   NYC TAXI CARTOGRAPHIC ATLAS
+   ═══════════════════════════════════════════════════════════════════════ */
+const INK = '#000000';
+const INK_SOFT = '#1a1a1a';
+const INK_FADED = '#555555';
+const INK_GHOST = '#999999';
+const PAPER = '#ffffff';
+const PAPER_DEEP = '#f5f5f5';
+const DAYS_SHORT = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+const DAYS_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const charts = {};
-function destroy(k){ if(charts[k]){charts[k].destroy();delete charts[k];} }
+let currentPage = 1;
+const loadedViews = { overview: false, rhythms: false, atlas: false, ledger: false, insights: false };
 
-const state = { page:1, sort:'v22', order:'desc', q:'' };
+// ─── Chart.js global defaults ──────────────────────────────────────────
+Chart.defaults.font.family = "'DM Mono', monospace";
+Chart.defaults.font.size = 10;
+Chart.defaults.color = INK;
+Chart.defaults.borderColor = INK;
+Chart.defaults.plugins.legend.display = false;
+Chart.defaults.plugins.tooltip.backgroundColor = INK;
+Chart.defaults.plugins.tooltip.titleColor = PAPER;
+Chart.defaults.plugins.tooltip.bodyColor = PAPER;
+Chart.defaults.plugins.tooltip.titleFont = { family: "'DM Mono', monospace", size: 10, weight: '700' };
+Chart.defaults.plugins.tooltip.bodyFont = { family: "'DM Mono', monospace", size: 11 };
+Chart.defaults.plugins.tooltip.padding = 10;
+Chart.defaults.plugins.tooltip.cornerRadius = 0;
+Chart.defaults.plugins.tooltip.displayColors = false;
+Chart.defaults.plugins.tooltip.titleAlign = 'center';
+Chart.defaults.plugins.tooltip.bodyAlign = 'center';
 
-/* ── Boot ── */
-document.addEventListener('DOMContentLoaded', async () => {
-  initTabs();
-  const [kpis, market, top, growth, share, segs, trendData, declining] = await Promise.all([
-    fetch(`${BASE}/api/kpis`).then(r=>r.json()),
-    fetch(`${BASE}/api/market_total`).then(r=>r.json()),
-    fetch(`${BASE}/api/top?n=15`).then(r=>r.json()),
-    fetch(`${BASE}/api/growth`).then(r=>r.json()),
-    fetch(`${BASE}/api/share`).then(r=>r.json()),
-    fetch(`${BASE}/api/segments`).then(r=>r.json()),
-    fetch(`${BASE}/api/trends`).then(r=>r.json()),
-    fetch(`${BASE}/api/declining`).then(r=>r.json()),
-  ]);
-  renderKPIs(kpis);
-  renderMarket(market);
-  renderTop(top);
-  renderGrowth(growth);
-  renderDeclining(declining);
-  renderShare(share);
-  renderSegs(segs);
-  renderTrends(trendData);
-  renderRH(market, top, growth, trendData);
-  populateFilter(top.map(t=>t.actor));
-  initFilters(top);
-  initExplorer();
-});
+const paperBackgroundPlugin = {
+  id: 'paperBackground',
+  beforeDraw: (chart) => {
+    const { ctx } = chart;
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, chart.width, chart.height);
+    ctx.restore();
+  }
+};
+Chart.register(paperBackgroundPlugin);
 
-/* ── KPIs ── */
-function renderKPIs(d){
-  counter('kpi-eoy22', d.eoy22);
-  counter('kpi-plat',  d.platforms);
-  counter('kpi-total', d.total);
-  const g=$('kpi-growth');
-  if(g){ g.textContent=(d.growth>0?'+':'')+d.growth+'%'; if(d.growth<0)g.style.color='#e74c3c'; }
+// ─── Utilities ─────────────────────────────────────────────────────────
+function fmt(n) {
+  if (n == null) return '—';
+  if (Number.isInteger(n)) return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
-function counter(id,target){
-  const el=$(id); if(!el)return;
-  const t0=performance.now(), dur=1100;
-  const tick=now=>{ const p=Math.min((now-t0)/dur,1),e=1-Math.pow(1-p,3); el.textContent=fmt(Math.round(e*target)); if(p<1)requestAnimationFrame(tick); };
-  requestAnimationFrame(tick);
+function fmtFull(n) {
+  if (n == null) return '—';
+  return Math.round(n).toLocaleString();
 }
-
-/* ── Market line ── */
-function renderMarket(data){
-  const ctx=$('c-market'); if(!ctx)return; destroy('market');
-  charts.market = new Chart(ctx,{
-    type:'line',
-    data:{ labels:data.map(d=>d.fact_date), datasets:[{ data:data.map(d=>d.total),
-      borderColor:'#F7941F', backgroundColor:'rgba(247,148,31,.08)',
-      borderWidth:2.5, fill:true, tension:.35, pointRadius:3, pointHoverRadius:6, pointBackgroundColor:'#F7941F' }] },
-    options:{ responsive:true, maintainAspectRatio:false,
-      interaction:{mode:'index',intersect:false},
-      plugins:{ legend:{display:false}, tooltip:{...TT, callbacks:{label:c=>'  Subscribers: '+fmt(c.raw)}} },
-      scales:{ x:{grid:{color:'rgba(0,0,0,0.04)'},ticks:{font:{size:10},maxTicksLimit:8}},
-               y:{grid:{color:'rgba(0,0,0,0.04)'},ticks:{callback:v=>fmtM(v),font:{size:10}}} } }
-  });
+async function fetchJSON(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(res.statusText);
+    return await res.json();
+  } catch (e) {
+    console.error('Fetch failed:', url, e);
+    return null;
+  }
 }
-
-/* ── Top platforms ── */
-function renderTop(data){
-  const ctx=$('c-top'); if(!ctx)return; destroy('top');
-  charts.top = new Chart(ctx,{
-    type:'bar',
-    data:{ labels:data.map(d=>d.actor), datasets:[{ data:data.map(d=>d.subs),
-      backgroundColor:data.map((_,i)=>PAL[i%PAL.length]), borderWidth:0, borderRadius:2 }] },
-    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{display:false}, tooltip:{...TT, callbacks:{label:c=>'  Subscribers: '+fmt(c.raw)}} },
-      scales:{ x:{grid:{color:'rgba(0,0,0,0.04)'},ticks:{callback:v=>fmtM(v),font:{size:10}}},
-               y:{grid:{display:false},ticks:{font:{size:10}}} } }
-  });
-}
-
-/* ── Growth ── */
-function renderGrowth(data){
-  const ctx=$('c-growth'); if(!ctx)return; destroy('growth');
-  const d12=data.slice(0,12);
-  /* Fixed height for consistent 3-col row */
-  const wrap=ctx.closest('.chart-box');
-  if(wrap){ wrap.style.height=''; }  // use CSS .tall = 360px
-  charts.growth = new Chart(ctx,{
-    type:'bar',
-    data:{ labels:d12.map(d=>d.actor), datasets:[{ data:d12.map(d=>d.pct),
-      backgroundColor:d12.map(d=>d.pct>=0?'rgba(26,158,92,.85)':'rgba(192,57,43,.85)'),
-      borderWidth:0, borderRadius:2, barPercentage:0.72, categoryPercentage:0.85 }] },
-    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{display:false}, tooltip:{...TT, callbacks:{
-        label:c=>`  ${c.raw>0?'+':''}${c.raw}%`,
-        afterLabel:c=>{ const d=d12[c.dataIndex]; return [`  Q4 2021: ${fmt(d.v21)}`, `  Q4 2022: ${fmt(d.v22)}`]; }
-      }}},
-      scales:{ x:{grid:{color:'rgba(0,0,0,0.04)'},ticks:{callback:v=>v+'%',font:{size:9}}},
-               y:{grid:{display:false},ticks:{font:{size:9}}} } }
-  });
-}
-
-/* ── Declining platforms ── */
-function renderDeclining(data){
-  const ctx=$('c-declining'); if(!ctx||!data||!data.length)return; destroy('declining');
-  const sorted=[...data].sort((a,b)=>a.pct-b.pct);
-  /* Use CSS .tall height — consistent with growth chart in same row */
-  const wrap=ctx.closest('.chart-box');
-  if(wrap){ wrap.style.height=''; }
-
-  charts.declining = new Chart(ctx,{
-    type:'bar',
-    data:{
-      labels: sorted.map(d=>d.actor),
-      datasets:[{
-        data: sorted.map(d=>d.pct),
-        backgroundColor: sorted.map(()=>'rgba(192,57,43,.82)'),
-        borderWidth:0, borderRadius:2,
-        barPercentage:0.72, categoryPercentage:0.85,
-      }]
+function paperAxes() {
+  return {
+    x: {
+      grid: { display: false, drawBorder: true, color: INK },
+      border: { color: INK, width: 1 },
+      ticks: { color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: 6 }
     },
-    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
-      plugins:{
-        legend:{display:false},
-        tooltip:{...TT, callbacks:{
-          label: c=>`  Change: ${c.raw}%`,
-          afterLabel: c=>{
-            const d=sorted[c.dataIndex];
-            return [`  Start: ${fmt(d.v_first)} (${d.d_first})`, `  End: ${fmt(d.v_last)} (${d.d_last})`];
-          }
-        }}
-      },
-      scales:{
-        x:{
-          grid:{color:'rgba(0,0,0,0.04)'},
-          ticks:{callback:v=>v+'%', font:{size:9}},
-          max:0,
-        },
-        y:{grid:{display:false}, ticks:{font:{size:9}}}
-      }
+    y: {
+      grid: { display: true, color: INK_GHOST, lineWidth: 0.5, drawTicks: false, drawBorder: false },
+      border: { display: false },
+      ticks: { color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: 10, callback: v => fmt(v) }
     }
-  });
+  };
 }
 
-/* ── Share ── */
-function renderShare(data){
-  const ctx=$('c-share'); if(!ctx)return; destroy('share');
-  const t8=data.platforms.slice(0,8), oth=data.platforms.slice(8).reduce((s,p)=>s+p.value,0);
-  const items=[...t8,{actor:'All Others',value:oth,pct:+(oth/data.total*100).toFixed(2)}];
-  const cols=[...PAL.slice(0,8),'#aab'];
-  charts.share = new Chart(ctx,{
-    type:'doughnut',
-    data:{ labels:items.map(d=>d.actor), datasets:[{ data:items.map(d=>d.value),
-      backgroundColor:cols, borderWidth:2, borderColor:'#fff', hoverOffset:8 }] },
-    options:{ responsive:true, maintainAspectRatio:false, cutout:'62%',
-      plugins:{ legend:{display:false}, tooltip:{...TT, callbacks:{label:c=>`  ${fmt(c.raw)}  (${items[c.dataIndex].pct}%)`}} } }
-  });
-  const leg=$('share-leg'); if(!leg)return;
-  leg.innerHTML=items.map((d,i)=>`<div class="dl-item"><span class="dot" style="background:${cols[i]}"></span><span class="name">${d.actor}</span><span class="pct">${d.pct}%</span></div>`).join('');
-}
-
-/* ── Trends ── */
-function renderTrends(data){
-  const ctx=$('c-trends'); if(!ctx)return; destroy('trends');
-  const actors=Object.keys(data);
-  const allDates=[...new Set(actors.flatMap(a=>data[a].map(d=>d.date)))].sort();
-  charts.trends = new Chart(ctx,{
-    type:'line',
-    data:{ labels:allDates, datasets:actors.map((actor,i)=>{
-      const m=Object.fromEntries(data[actor].map(d=>[d.date,d.value]));
-      return { label:actor, data:allDates.map(dt=>m[dt]??null),
-        borderColor:PAL[i%PAL.length], backgroundColor:'transparent',
-        borderWidth:2, pointRadius:2, pointHoverRadius:5, tension:.3, spanGaps:true };
-    })},
-    options:{ responsive:true, maintainAspectRatio:false,
-      interaction:{mode:'index',intersect:false},
-      plugins:{ legend:{position:'bottom',labels:{boxWidth:12,padding:12,font:{size:10}}},
-        tooltip:{...TT, callbacks:{label:c=>`  ${c.dataset.label}: ${fmt(c.raw)}`}} },
-      scales:{ x:{grid:{color:'rgba(0,0,0,0.04)'},ticks:{font:{size:9},maxTicksLimit:8}},
-               y:{grid:{color:'rgba(0,0,0,0.04)'},ticks:{callback:v=>fmtM(v),font:{size:10}}} } }
-  });
-}
-
-/* ── Segments ── */
-function renderSegs(data){
-  const grid=$('seg-grid'), bar=$('seg-bar'); if(!grid)return;
-  const keys=Object.keys(data), total=keys.reduce((s,k)=>s+data[k].count,0);
-  grid.innerHTML=keys.map((k,i)=>`<div class="seg-card"><div class="sl">${k}</div><div class="sn" style="color:${SEG[i]}">${data[k].count}</div><div class="ss">platforms</div></div>`).join('');
-  if(bar) bar.innerHTML=keys.map((k,i)=>{const p=(data[k].count/total*100).toFixed(1);return `<div class="seg-bar-c" title="${k}: ${data[k].count}" style="width:${p}%;background:${SEG[i]}"></div>`;}).join('');
-}
-
-/* ── Research Highlight mini charts ── */
-function renderRH(market, top, growth, trendRaw){
-  /* RH1: market line (dark bg) */
-  const c1=$('rh-market');
-  if(c1) new Chart(c1,{
-    type:'line',
-    data:{ labels:market.map(d=>d.fact_date), datasets:[{ data:market.map(d=>d.total),
-      borderColor:'#F7941F', backgroundColor:'rgba(247,148,31,.15)',
-      borderWidth:2.5, fill:true, tension:.35, pointRadius:0 }] },
-    options:{ responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{display:false}, tooltip:{...TT, callbacks:{label:c=>' '+fmt(c.raw)}} },
-      scales:{ x:{display:true,ticks:{color:'#555',font:{size:8},maxTicksLimit:6},grid:{color:'rgba(0,0,0,0.06)'}},
-               y:{display:true,ticks:{color:'#555',font:{size:8},callback:v=>fmtM(v)},grid:{color:'rgba(0,0,0,0.06)'}} } }
-  });
-
-  /* RH2: top-5 vertical bar — x-axis labels hidden, icons shown in HTML strip below */
-  const c2=$('rh-top5');
-  if(c2){
-    const t5=top.slice(0,5);
-    new Chart(c2,{
-      type:'bar',
-      data:{ labels:t5.map(d=>d.actor), datasets:[{ data:t5.map(d=>d.subs),
-        backgroundColor:PAL.slice(0,5), borderWidth:0, borderRadius:3 }] },
-      options:{ responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{display:false}, tooltip:{...TT, callbacks:{label:c=>'  '+fmt(c.raw)+' subscribers'}} },
-        scales:{
-          x:{ display:false },   // ← hidden: labels shown in HTML strip below instead
-          y:{ grid:{color:'rgba(0,0,0,0.06)'},ticks:{callback:v=>fmtM(v),font:{size:8}} }
+// ─── SHEET A: GENERAL SURVEY ───────────────────────────────────────────
+async function loadOverview() {
+  if (loadedViews.overview) return;
+  loadedViews.overview = true;
+  const stats = await fetchJSON('/api/stats');
+  if (stats) {
+    document.querySelectorAll('[data-stat]').forEach(el => {
+      const key = el.dataset.stat;
+      const v = stats[key];
+      if (v == null) return;
+      if (key === 'total_trips') el.textContent = fmt(v);
+      else if (key === 'total_hours') el.textContent = fmt(v);
+      else if (key === 'avg_distance_km') el.textContent = v.toFixed(2);
+      else if (key === 'avg_speed_kmh') el.textContent = v.toFixed(2);
+      else el.textContent = fmt(v);
+    });
+  }
+  const hourly = await fetchJSON('/api/hourly');
+  if (hourly) {
+    new Chart(document.getElementById('chart-hourly'), {
+      type: 'bar',
+      data: {
+        labels: hourly.map(h => String(h.hour_of_day).padStart(2, '0')),
+        datasets: [{
+          data: hourly.map(h => h.count),
+          backgroundColor: hourly.map(h => {
+            const isRush = (h.hour_of_day >= 7 && h.hour_of_day <= 9) || (h.hour_of_day >= 17 && h.hour_of_day <= 19);
+            return isRush ? INK : INK_GHOST;
+          }),
+          borderWidth: 0, barPercentage: 0.78, categoryPercentage: 0.92,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: { duration: 400 },
+        plugins: {
+          tooltip: { callbacks: { title: c => `${c[0].label}:00h`, label: c => `${fmtFull(c.parsed.y)} trips` } },
+          legend: {
+            display: true, position: 'top', align: 'end',
+            labels: {
+              color: INK, font: { family: "'DM Mono', monospace", size: 9 },
+              usePointStyle: true, pointStyle: 'circle', boxWidth: 10, boxHeight: 10, padding: 12,
+              generateLabels: () => [
+                { text: 'Rush hour', fillStyle: INK, strokeStyle: INK },
+                { text: 'Off-peak', fillStyle: INK_GHOST, strokeStyle: INK_GHOST },
+              ]
+            }
+          }
+        },
+        scales: {
+          ...paperAxes(),
+          x: { ...paperAxes().x, title: { display: true, text: 'Hour of day', color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: { top: 6 } } },
+          y: { ...paperAxes().y, title: { display: true, text: 'Trip count', color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: { bottom: 6 } } }
         }
       }
     });
-    /* Icon + name strip — rendered in HTML outside canvas */
-    const strip=$('rh-top5-icons');
-    if(strip) strip.innerHTML=t5.map((d,i)=>{
-      const dom=LOGOS[d.actor];
-      // Short display name: first word only for space
-      const shortName = d.actor.split(' ')[0];
-      const icon=dom
-        ?`<img src="${fav(dom)}" title="${d.actor}" style="width:22px;height:22px;border-radius:3px;border:1px solid #ddd;display:block;margin:0 auto 3px;" onerror="this.style.display='none'">`
-        :`<span style="width:22px;height:22px;border-radius:3px;background:${PAL[i]};display:block;margin:0 auto 3px;"></span>`;
-      return `<div style="text-align:center;flex:1;">${icon}<span style="font-size:9px;font-weight:700;color:#555;display:block;line-height:1.2;">${shortName}</span></div>`;
-    }).join('');
   }
-
-  /* RH3: growth mini bar */
-  const c3=$('rh-growth');
-  if(c3){
-    const g6=growth.slice(0,6);
-    new Chart(c3,{
-      type:'bar',
-      data:{ labels:g6.map(d=>d.actor.length>13?d.actor.slice(0,13)+'…':d.actor),
-        datasets:[{ data:g6.map(d=>d.pct), backgroundColor:'#1a9e5c', borderWidth:0, borderRadius:3 }] },
-      options:{ responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{display:false}, tooltip:{...TT,callbacks:{label:c=>` +${c.raw}%`}} },
-        scales:{ x:{grid:{display:false},ticks:{font:{size:8},color:'#555'}},
-                 y:{grid:{color:'rgba(0,0,0,0.06)'},ticks:{callback:v=>v+'%',font:{size:8}}} } }
+  const durDist = await fetchJSON('/api/duration_distribution');
+  if (durDist) {
+    new Chart(document.getElementById('chart-duration'), {
+      type: 'bar',
+      data: {
+        labels: durDist.map(d => d.label),
+        datasets: [{ data: durDist.map(d => d.count), backgroundColor: INK_SOFT, borderColor: INK, borderWidth: 1, barPercentage: 0.85, categoryPercentage: 0.95 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: { duration: 400 },
+        plugins: { tooltip: { callbacks: { title: c => c[0].label, label: c => `${fmtFull(c.parsed.y)} trips` } } },
+        scales: {
+          ...paperAxes(),
+          x: { ...paperAxes().x, title: { display: true, text: 'Duration bucket', color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: { top: 6 } } },
+          y: { ...paperAxes().y, title: { display: true, text: 'Trip count', color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: { bottom: 6 } } }
+        }
+      }
     });
   }
-
-  /* RH4: Netflix vs challengers */
-  const c4=$('rh-netflix');
-  if(c4&&trendRaw){
-    const watch=['Netflix','Peacock Premium','Paramount+'];
-    const tCols={'Netflix':'#E50914','Peacock Premium':'#F7941F','Paramount+':'#083050'};
-    const allDts=[...new Set(watch.flatMap(a=>(trendRaw[a]||[]).map(d=>d.date)))].sort();
-    new Chart(c4,{
-      type:'line',
-      data:{ labels:allDts, datasets:watch.filter(a=>trendRaw[a]).map(actor=>{
-        const m=Object.fromEntries(trendRaw[actor].map(d=>[d.date,d.value]));
-        return { label:actor, data:allDts.map(dt=>m[dt]??null),
-          borderColor:tCols[actor], backgroundColor:'transparent',
-          borderWidth:2, pointRadius:0, tension:.3, spanGaps:true };
-      })},
-      options:{ responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{display:true,position:'bottom',labels:{font:{size:8},boxWidth:10,padding:5}},
-          tooltip:{...TT,callbacks:{label:c=>` ${c.dataset.label}: ${fmt(c.raw)}`}} },
-        scales:{ x:{display:true,ticks:{font:{size:7},maxTicksLimit:5},grid:{color:'rgba(0,0,0,0.05)'}},
-                 y:{display:true,ticks:{callback:v=>fmtM(v),font:{size:8}},grid:{color:'rgba(0,0,0,0.05)'}} } }
+  const speedDist = await fetchJSON('/api/speed_distribution');
+  if (speedDist) {
+    new Chart(document.getElementById('chart-speed'), {
+      type: 'bar',
+      data: {
+        labels: speedDist.map(d => d.label),
+        datasets: [{ data: speedDist.map(d => d.count), backgroundColor: INK, borderColor: INK, borderWidth: 0, barPercentage: 0.85, categoryPercentage: 0.95 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: { duration: 400 },
+        plugins: { tooltip: { callbacks: { title: c => c[0].label, label: c => `${fmtFull(c.parsed.y)} trips` } } },
+        scales: {
+          ...paperAxes(),
+          x: { ...paperAxes().x, title: { display: true, text: 'Speed bucket', color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: { top: 6 } } },
+          y: { ...paperAxes().y, title: { display: true, text: 'Trip count', color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: { bottom: 6 } } }
+        }
+      }
     });
   }
 }
 
-/* ── Filter ── */
-function populateFilter(actors){
-  const sel=$('f-platforms'); if(!sel)return;
-  sel.innerHTML=actors.map((a,i)=>`<option value="${a}" ${i<9?'selected':''}>${a}</option>`).join('');
-}
-function initFilters(){
-  $('btn-apply')?.addEventListener('click', async ()=>{
-    const sel=$('f-platforms');
-    const actors=sel?[...sel.selectedOptions].map(o=>o.value):[];
-    if(!actors.length)return;
-    const data=await fetch(`${BASE}/api/trends?actors=${encodeURIComponent(actors.join(','))}`).then(r=>r.json());
-    renderTrends(data);
-  });
-  $('btn-reset')?.addEventListener('click',()=>{
-    const sel=$('f-platforms');
-    if(sel)[...sel.options].forEach((o,i)=>{o.selected=i<9;});
-  });
-  $('f-topn')?.addEventListener('change', async e=>{
-    const top=await fetch(`${BASE}/api/top?n=${e.target.value}`).then(r=>r.json());
-    renderTop(top);
-  });
-}
-
-/* ── Explorer ── */
-function initExplorer(){
-  loadExplorer();
-  $$('th.sortable').forEach(th=>{
-    th.addEventListener('click',()=>{
-      const f=th.dataset.f;
-      state.sort===f ? state.order=state.order==='desc'?'asc':'desc' : (state.sort=f, state.order='desc');
-      $$('th.sortable').forEach(t=>t.classList.remove('asc','desc'));
-      th.classList.add(state.order);
-      state.page=1; loadExplorer();
+// ─── SHEET B: TEMPORAL CHARTS ──────────────────────────────────────────
+async function loadRhythms() {
+  if (loadedViews.rhythms) return;
+  loadedViews.rhythms = true;
+  const heatData = await fetchJSON('/api/heatmap');
+  if (heatData) buildHeatmap(heatData);
+  const daily = await fetchJSON('/api/daily');
+  if (daily) {
+    new Chart(document.getElementById('chart-daily'), {
+      type: 'bar',
+      data: {
+        labels: daily.map(d => DAYS_SHORT[d.day_of_week]),
+        datasets: [{ data: daily.map(d => d.count), backgroundColor: daily.map((d, i) => i >= 5 ? INK_FADED : INK), borderWidth: 0, barPercentage: 0.7 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: { duration: 400 },
+        plugins: {
+          tooltip: { callbacks: { title: c => DAYS_FULL[daily[c[0].dataIndex].day_of_week], label: c => `${fmtFull(c.parsed.y)} trips` } },
+          legend: {
+            display: true, position: 'top', align: 'end',
+            labels: {
+              color: INK, font: { family: "'DM Mono', monospace", size: 9 },
+              usePointStyle: true, pointStyle: 'circle', boxWidth: 10, boxHeight: 10, padding: 12,
+              generateLabels: () => [
+                { text: 'Weekday', fillStyle: INK, strokeStyle: INK },
+                { text: 'Weekend', fillStyle: INK_FADED, strokeStyle: INK_FADED },
+              ]
+            }
+          }
+        },
+        scales: {
+          ...paperAxes(),
+          x: { ...paperAxes().x, title: { display: true, text: 'Day of week', color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: { top: 6 } } },
+          y: { ...paperAxes().y, title: { display: true, text: 'Trip count', color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: { bottom: 6 } } }
+        }
+      }
     });
-  });
-  $('ex-btn')?.addEventListener('click',()=>{ state.q=$('ex-q')?.value||''; state.page=1; loadExplorer(); });
-  $('ex-q')?.addEventListener('keydown',e=>{ if(e.key==='Enter'){state.q=e.target.value;state.page=1;loadExplorer();} });
-}
-
-async function loadExplorer(){
-  const {page,sort,order,q}=state;
-  const url=`${BASE}/api/explorer?page=${page}&limit=20&sort=${sort}&order=${order}${q?'&q='+encodeURIComponent(q):''}`;
-  const res=await fetch(url).then(r=>r.json());
-  const tbody=$('ex-body'); if(!tbody)return;
-  tbody.innerHTML=res.data.map((row,i)=>{
-    const rank=(page-1)*20+i+1;
-    const dom=LOGOS[row.actor];
-    const icon=dom?`<img src="${fav(dom)}" alt="" onerror="this.outerHTML='<span class=\\'init\\'>${row.actor[0]}</span>'">`:`<span class="init">${row.actor[0]}</span>`;
-    const gc=row.pct>0?'up':row.pct<0?'dn':'fl';
-    const gs=row.pct!=null?`<span class="badge ${gc}">${row.pct>0?'+':''}${row.pct}%</span>`:'—';
-    return `<tr><td>${rank}</td><td class="name"><span class="lc">${icon}${row.actor}</span></td><td>${fmt(row.v21)}</td><td>${fmt(row.v22)}</td><td>${fmt(row.added)}</td><td>${gs}</td></tr>`;
-  }).join('');
-  const info=$('ex-info'); if(info)info.textContent=`${fmt(res.total)} platforms`;
-  renderPg(res);
-}
-
-function renderPg(res){
-  const wrap=$('ex-pg'); if(!wrap)return;
-  const {page,pages}=res; let h=``;
-  h+=`<button class="pg-btn" onclick="goPage(${page-1})" ${page<=1?'disabled':''}>&larr;</button>`;
-  const r=[]; for(let p=Math.max(1,page-2);p<=Math.min(pages,page+2);p++)r.push(p);
-  if(r[0]>1){h+=`<button class="pg-btn" onclick="goPage(1)">1</button>`; if(r[0]>2)h+=`<button class="pg-btn" disabled>…</button>`;}
-  r.forEach(p=>{h+=`<button class="pg-btn ${p===page?'active':''}" onclick="goPage(${p})">${p}</button>`;});
-  if(r[r.length-1]<pages){if(r[r.length-1]<pages-1)h+=`<button class="pg-btn" disabled>…</button>`; h+=`<button class="pg-btn" onclick="goPage(${pages})">${pages}</button>`;}
-  h+=`<button class="pg-btn" onclick="goPage(${page+1})" ${page>=pages?'disabled':''}>&rarr;</button>`;
-  wrap.innerHTML=h;
-}
-window.goPage=p=>{state.page=p;loadExplorer();};
-
-/* ── Tabs ── */
-function initTabs(){
-  $$('.wwd-tab').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      $$('.wwd-tab').forEach(b=>b.classList.remove('active'));
-      $$('.wwd-pane').forEach(p=>p.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById(btn.dataset.pane)?.classList.add('active');
+  }
+  const monthly = await fetchJSON('/api/monthly');
+  if (monthly) {
+    new Chart(document.getElementById('chart-monthly'), {
+      type: 'line',
+      data: {
+        labels: monthly.map(m => m.month_name),
+        datasets: [{
+          data: monthly.map(m => m.count),
+          borderColor: INK, backgroundColor: 'rgba(42, 37, 32, 0.08)', borderWidth: 2,
+          tension: 0.3, pointRadius: 5, pointBackgroundColor: PAPER, pointBorderColor: INK,
+          pointBorderWidth: 2, pointHoverRadius: 8, pointHoverBackgroundColor: INK,
+          pointHoverBorderColor: PAPER, fill: true,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: { duration: 400 },
+        plugins: { tooltip: { callbacks: { title: c => c[0].label, label: c => `${fmtFull(c.parsed.y)} trips` } } },
+        scales: {
+          ...paperAxes(),
+          x: { ...paperAxes().x, title: { display: true, text: 'Month', color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: { top: 6 } } },
+          y: { ...paperAxes().y, title: { display: true, text: 'Trip count', color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: { bottom: 6 } } }
+        }
+      }
     });
-  });
+  }
+  const passengers = await fetchJSON('/api/passengers');
+  if (passengers) {
+    new Chart(document.getElementById('chart-passengers'), {
+      type: 'bar',
+      data: {
+        labels: passengers.map(p => p.passenger_count + ' pax'),
+        datasets: [{ data: passengers.map(p => p.count), backgroundColor: INK, borderWidth: 0, barPercentage: 0.75 }]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false, animation: { duration: 400 },
+        plugins: { tooltip: { callbacks: { label: c => `${fmtFull(c.parsed.x)} trips` } } },
+        scales: {
+          x: {
+            grid: { color: INK_GHOST, lineWidth: 0.5, drawBorder: false }, border: { display: false },
+            ticks: { color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, callback: v => fmt(v) },
+            title: { display: true, text: 'Trip count', color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: { top: 6 } }
+          },
+          y: {
+            grid: { display: false }, border: { color: INK },
+            ticks: { color: INK, font: { family: "'Cormorant Garamond', serif", size: 13, style: 'italic' } },
+            title: { display: true, text: 'Passenger count', color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: { bottom: 6 } }
+          }
+        }
+      }
+    });
+  }
+  const vendors = await fetchJSON('/api/vendor_comparison');
+  if (vendors) {
+    new Chart(document.getElementById('chart-vendor'), {
+      type: 'bar',
+      data: {
+        labels: ['Duration (min)', 'Distance (km)', 'Velocity (km/h)'],
+        datasets: vendors.map((v, i) => ({
+          label: 'Vendor ' + (v.vendor_id === 1 ? 'I' : 'II'),
+          data: [Math.round(v.avg_duration_min * 10) / 10, Math.round(v.avg_distance * 100) / 100, Math.round(v.avg_speed * 10) / 10],
+          backgroundColor: i === 0 ? INK : INK_GHOST,
+          borderWidth: 0, barPercentage: 0.75, categoryPercentage: 0.75,
+        }))
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: { duration: 400 },
+        plugins: {
+          legend: {
+            display: true, position: 'top', align: 'end',
+            labels: { color: INK, font: { family: "'DM Mono', monospace", size: 9, style: 'italic' }, usePointStyle: true, pointStyle: 'circle', boxWidth: 12, boxHeight: 12, padding: 14 }
+          }
+        },
+        scales: {
+          ...paperAxes(),
+          x: { ...paperAxes().x, title: { display: true, text: 'Metric', color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: { top: 6 } } },
+          y: { ...paperAxes().y, title: { display: true, text: 'Value', color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: { bottom: 6 } } }
+        }
+      }
+    });
+  }
 }
+
+// ─── Heatmap (Sheet B) ─────────────────────────────────────────────────
+function buildHeatmap(data) {
+  const grid = {};
+  let maxCount = 0;
+  data.forEach(d => {
+    grid[`${d.hour_of_day}-${d.day_of_week}`] = d.count;
+    if (d.count > maxCount) maxCount = d.count;
+  });
+  const container = document.getElementById('heatmap');
+  container.innerHTML = '<canvas id="heatmap-canvas"></canvas><div id="heatmap-tip" class="hm-tip"></div>';
+  const canvas = document.getElementById('heatmap-canvas');
+  const tooltip = document.getElementById('heatmap-tip');
+  const colLabel = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const rowLabelW = 38, colLabelH = 20;
+  const cssWidth = container.clientWidth || 760;
+  const cellW = (cssWidth - rowLabelW) / 7;
+  const cellH = 13;
+  const cssHeight = colLabelH + cellH * 24;
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  canvas.width = Math.round(cssWidth * dpr);
+  canvas.height = Math.round(cssHeight * dpr);
+  canvas.style.width = cssWidth + 'px';
+  canvas.style.height = cssHeight + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, cssWidth, cssHeight);
+  ctx.fillStyle = '#000000';
+  ctx.font = "600 9px 'DM Mono', monospace";
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let d = 0; d < 7; d++) {
+    ctx.fillText(colLabel[d].toUpperCase(), rowLabelW + cellW * (d + 0.5), colLabelH / 2);
+  }
+  ctx.strokeStyle = '#000000'; ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(rowLabelW, colLabelH - 0.5);
+  ctx.lineTo(cssWidth, colLabelH - 0.5);
+  ctx.stroke();
+  for (let h = 0; h < 24; h++) {
+    const y = colLabelH + h * cellH;
+    if (h % 3 === 0) {
+      ctx.fillStyle = '#555555';
+      ctx.font = "9px 'DM Mono', monospace";
+      ctx.textAlign = 'right';
+      ctx.fillText(String(h).padStart(2, '0') + 'h', rowLabelW - 6, y + cellH / 2);
+    }
+    for (let d = 0; d < 7; d++) {
+      const count = grid[`${h}-${d}`] || 0;
+      const t = Math.sqrt(count / maxCount);
+      const v = Math.round(255 - 255 * t);
+      ctx.fillStyle = `rgb(${v},${v},${v})`;
+      const x = rowLabelW + d * cellW;
+      ctx.fillRect(x + 0.5, y + 0.5, cellW - 1, cellH - 1);
+      ctx.strokeStyle = '#cccccc'; ctx.lineWidth = 0.5;
+      ctx.strokeRect(x + 0.5, y + 0.5, cellW - 1, cellH - 1);
+    }
+  }
+  canvas.onmousemove = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    if (x < rowLabelW || y < colLabelH) { tooltip.style.opacity = '0'; return; }
+    const d = Math.floor((x - rowLabelW) / cellW);
+    const h = Math.floor((y - colLabelH) / cellH);
+    if (d < 0 || d > 6 || h < 0 || h > 23) { tooltip.style.opacity = '0'; return; }
+    const count = grid[`${h}-${d}`] || 0;
+    tooltip.textContent = `${colLabel[d]} ${String(h).padStart(2, '0')}h · ${fmtFull(count)} trips`;
+    tooltip.style.opacity = '1';
+    tooltip.style.left = (x + 14) + 'px';
+    tooltip.style.top = (y - 8) + 'px';
+  };
+  canvas.onmouseleave = () => { tooltip.style.opacity = '0'; };
+}
+
+// ─── SHEET C: BOROUGH PLATES ───────────────────────────────────────────
+async function loadAtlas() {
+  if (loadedViews.atlas) return;
+  loadedViews.atlas = true;
+  const zones = await fetchJSON('/api/zones');
+  if (!zones) return;
+  new Chart(document.getElementById('chart-zones'), {
+    type: 'bar',
+    data: {
+      labels: zones.map(z => z.zone_name),
+      datasets: [{
+        data: zones.map(z => z.trip_count),
+        backgroundColor: zones.map((z, i) => i < 4 ? INK : INK_GHOST),
+        borderWidth: 0, barPercentage: 0.8,
+      }]
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false, animation: { duration: 400 },
+      plugins: {
+        tooltip: { callbacks: { title: c => c[0].label, label: c => `${fmtFull(c.parsed.x)} pickups` } },
+        legend: {
+          display: true, position: 'top', align: 'end',
+          labels: {
+            color: INK, font: { family: "'DM Mono', monospace", size: 9 },
+            usePointStyle: true, pointStyle: 'circle', boxWidth: 10, boxHeight: 10, padding: 12,
+            generateLabels: () => [
+              { text: 'Top zones', fillStyle: INK, strokeStyle: INK },
+              { text: 'Other zones', fillStyle: INK_GHOST, strokeStyle: INK_GHOST },
+            ]
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: INK_GHOST, lineWidth: 0.5, drawBorder: false }, border: { display: false },
+          ticks: { color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, callback: v => fmt(v) },
+          title: { display: true, text: 'Pickup count', color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: { top: 6 } }
+        },
+        y: {
+          grid: { display: false }, border: { color: INK },
+          ticks: { autoSkip: false, color: INK, font: { family: "'Cormorant Garamond', serif", size: 13, style: 'italic' }, padding: 6 },
+          title: { display: true, text: 'Zone', color: INK_FADED, font: { family: "'DM Mono', monospace", size: 9 }, padding: { bottom: 6 } }
+        }
+      }
+    }
+  });
+
+  const total = zones.reduce((s, z) => s + z.trip_count, 0);
+  // Build a proper <table> so mobile card layout works cleanly
+  let html = '<table class="sr-table"><thead><tr>';
+  html += '<th class="sr-th sr-right">#</th>';
+  html += '<th class="sr-th">Zone</th>';
+  html += '<th class="sr-th sr-right">Trips</th>';
+  html += '<th class="sr-th sr-right">Share</th>';
+  html += '<th class="sr-th sr-right">Duration</th>';
+  html += '<th class="sr-th sr-right">Velocity</th>';
+  html += '</tr></thead><tbody>';
+  zones.forEach((z, i) => {
+    const pct = total ? ((z.trip_count / total) * 100).toFixed(4) : '0.0';
+    html += `<tr class="sr-row${i < 4 ? ' sr-top' : ''}">`;
+    html += `<td class="sr-td sr-rank" data-label="#">${String(i + 1).padStart(2, '0')}</td>`;
+    html += `<td class="sr-td sr-name" data-label="Zone">${z.zone_name}</td>`;
+    html += `<td class="sr-td sr-right sr-mono" data-label="Trips">${fmt(z.trip_count)}</td>`;
+    html += `<td class="sr-td sr-right sr-dim" data-label="Share">${pct}%</td>`;
+    html += `<td class="sr-td sr-right sr-dim" data-label="Duration">${z.avg_duration_min ? z.avg_duration_min.toFixed(2) + ' min' : '—'}</td>`;
+    html += `<td class="sr-td sr-right sr-dim" data-label="Velocity">${z.avg_speed ? z.avg_speed.toFixed(2) + ' km/h' : '—'}</td>`;
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById('sector-register').innerHTML = html;
+}
+
+// ─── SHEET D: FIELD NOTEBOOK ──────────────────────────────────────────
+async function loadLedger(page = 1) {
+  currentPage = page;
+  const params = new URLSearchParams({ page, per_page: 40 });
+
+  const tripId     = document.getElementById('filter-id').value.trim();
+  const hour       = document.getElementById('filter-hour').value;
+  const day        = document.getElementById('filter-day').value;
+  const month      = document.getElementById('filter-month').value;
+  const vendor     = document.getElementById('filter-vendor').value;
+  const passengers = document.getElementById('filter-passengers').value;
+  const sortBy     = document.getElementById('filter-sort').value;
+  const order      = document.getElementById('filter-order').value;
+
+  if (tripId)     params.set('trip_id', tripId);
+  if (hour)       params.set('hour', hour);
+  if (day)        params.set('day', day);
+  if (month)      params.set('month', month);
+  if (vendor)     params.set('vendor', vendor);
+  if (passengers) params.set('passengers', passengers);
+  params.set('sort', sortBy);
+  params.set('order', order);
+
+  const data = await fetchJSON('/api/trips?' + params);
+  if (!data) {
+    document.getElementById('ledger-table').innerHTML = '<p style="padding:40px;text-align:center;color:#756c5b;font-style:italic">No records to show. Run the ETL pipeline first.</p>';
+    return;
+  }
+  let html = '<table><thead><tr>';
+  html += '<th>Trip ID</th><th>Vendor</th><th>Pickup</th><th>Pax</th><th>Duration</th><th>Distance</th><th>Velocity</th>';
+  html += '</tr></thead><tbody>';
+  data.trips.forEach(t => {
+    html += `<tr>
+      <td class="mono">${t.trip_id.slice(0, 12)}</td>
+      <td>${t.vendor_id === 1 ? 'I' : 'II'}</td>
+      <td class="mono">${t.pickup_datetime}</td>
+      <td>${t.passenger_count}</td>
+      <td>${(t.trip_duration / 60).toFixed(2)} min</td>
+      <td>${t.distance_km.toFixed(2)} km</td>
+      <td>${t.speed_kmh.toFixed(2)} km/h</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('ledger-table').innerHTML = html;
+  const totalPages = Math.ceil(data.total / data.per_page);
+  document.getElementById('ledger-pagination').innerHTML = `
+    <span>${fmtFull(data.total)} records · page ${data.page} of ${totalPages}</span>
+    <div style="display:flex;gap:8px">
+      <button class="page-btn" ${page <= 1 ? 'disabled' : ''} onclick="loadLedger(${page - 1})">← prev</button>
+      <button class="page-btn" ${page >= totalPages ? 'disabled' : ''} onclick="loadLedger(${page + 1})">next →</button>
+    </div>
+  `;
+}
+
+// ─── SHEET E: MARGINALIA ───────────────────────────────────────────────
+async function loadInsights() {
+  if (loadedViews.insights) return;
+  loadedViews.insights = true;
+  const insights = await fetchJSON('/api/insights');
+  if (!insights) return;
+  const sections = [];
+  if (insights[0]) {
+    const rows = insights[0].data;
+    const rush = rows.find(r => r.period === 'Rush Hour') || {};
+    const off  = rows.find(r => r.period === 'Off-Peak') || {};
+    const speedDelta = (off.avg_speed && rush.avg_speed) ? (((rush.avg_speed - off.avg_speed) / off.avg_speed) * 100).toFixed(2) : '0';
+    const durDelta   = (off.avg_duration && rush.avg_duration) ? (((rush.avg_duration - off.avg_duration) / off.avg_duration) * 100).toFixed(2) : '0';
+    sections.push(`
+      <article class="margin-card">
+        <div class="margin-numeral">I.</div>
+        <div class="margin-content">
+          <div class="margin-tag">Marginal note 01 · the rush hour tax</div>
+          <h3 class="margin-title">${insights[0].title}</h3>
+          <p class="margin-prose">${insights[0].interpretation}</p>
+          <table class="margin-table">
+            <thead><tr><th>Period</th><th>Velocity</th><th>Duration</th><th>Trips</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>Off-Peak</td>
+                <td>${off.avg_speed != null ? off.avg_speed.toFixed(2) : '—'}<span class="unit">km/h</span></td>
+                <td>${off.avg_duration != null ? off.avg_duration.toFixed(2) : '—'}<span class="unit">min</span></td>
+                <td>${fmt(off.trips || 0)}</td>
+              </tr>
+              <tr>
+                <td>Rush Hour</td>
+                <td>${rush.avg_speed != null ? rush.avg_speed.toFixed(2) : '—'}<span class="unit">km/h</span></td>
+                <td>${rush.avg_duration != null ? rush.avg_duration.toFixed(2) : '—'}<span class="unit">min</span></td>
+                <td>${fmt(rush.trips || 0)}</td>
+              </tr>
+              <tr class="delta-row">
+                <td>Δ</td>
+                <td>${parseFloat(speedDelta) > 0 ? '+' : ''}${speedDelta}%</td>
+                <td>${parseFloat(durDelta) > 0 ? '+' : ''}${durDelta}%</td>
+                <td>—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </article>`);
+  }
+  if (insights[1]) {
+    const rows = insights[1].data;
+    const wkday = rows.find(r => r.type === 'Weekday') || {};
+    const wkend = rows.find(r => r.type === 'Weekend') || {};
+    sections.push(`
+      <article class="margin-card">
+        <div class="margin-numeral">II.</div>
+        <div class="margin-content">
+          <div class="margin-tag">Marginal note 02 · the weekend atlas</div>
+          <h3 class="margin-title">${insights[1].title}</h3>
+          <p class="margin-prose">${insights[1].interpretation}</p>
+          <table class="margin-table">
+            <thead><tr><th>Type</th><th>Distance</th><th>Duration</th><th>Velocity</th><th>Trips</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>Weekday</td>
+                <td>${wkday.avg_distance != null ? wkday.avg_distance.toFixed(2) : '—'}<span class="unit">km</span></td>
+                <td>${wkday.avg_duration != null ? wkday.avg_duration.toFixed(2) : '—'}<span class="unit">min</span></td>
+                <td>${wkday.avg_speed != null ? wkday.avg_speed.toFixed(2) : '—'}<span class="unit">km/h</span></td>
+                <td>${fmt(wkday.trips || 0)}</td>
+              </tr>
+              <tr>
+                <td>Weekend</td>
+                <td>${wkend.avg_distance != null ? wkend.avg_distance.toFixed(2) : '—'}<span class="unit">km</span></td>
+                <td>${wkend.avg_duration != null ? wkend.avg_duration.toFixed(2) : '—'}<span class="unit">min</span></td>
+                <td>${wkend.avg_speed != null ? wkend.avg_speed.toFixed(2) : '—'}<span class="unit">km/h</span></td>
+                <td>${fmt(wkend.trips || 0)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </article>`);
+  }
+  if (insights[2]) {
+    const rows = insights[2].data;
+    const totalTop = rows.reduce((s, r) => s + (r.trip_count || 0), 0);
+    const tableRows = rows.map((r, i) => `
+      <tr>
+        <td>${String(i + 1).padStart(2, '0')}</td>
+        <td>${r.zone_name}</td>
+        <td>${fmt(r.trip_count)}</td>
+        <td>${totalTop ? ((r.trip_count / totalTop) * 100).toFixed(2) : '—'}%</td>
+        <td>${r.avg_speed != null ? r.avg_speed.toFixed(2) : '—'}<span class="unit">km/h</span></td>
+      </tr>`).join('');
+    sections.push(`
+      <article class="margin-card">
+        <div class="margin-numeral">III.</div>
+        <div class="margin-content">
+          <div class="margin-tag">Marginal note 03 · zone dominance</div>
+          <h3 class="margin-title">${insights[2].title}</h3>
+          <p class="margin-prose">${insights[2].interpretation}</p>
+          <table class="margin-table">
+            <thead><tr><th>Rank</th><th>Zone</th><th>Trips</th><th>Share</th><th>Velocity</th></tr></thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </div>
+      </article>`);
+  }
+  document.getElementById('insights-container').innerHTML = sections.join('');
+}
+
+// ─── Sheet switching ───────────────────────────────────────────────────
+document.querySelectorAll('.sheet-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const view = btn.dataset.view;
+    document.querySelectorAll('.sheet-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('view-' + view).classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (view === 'overview') loadOverview();
+    if (view === 'rhythms')  loadRhythms();
+    if (view === 'atlas')    loadAtlas();
+    if (view === 'ledger')   loadLedger(1);
+    if (view === 'insights') loadInsights();
+  });
+});
+
+// ─── Populate hour filter ──────────────────────────────────────────────
+const hourSelect = document.getElementById('filter-hour');
+for (let h = 0; h < 24; h++) {
+  const opt = document.createElement('option');
+  opt.value = h;
+  opt.textContent = String(h).padStart(2, '0') + ':00';
+  hourSelect.appendChild(opt);
+}
+
+// ─── Apply / Reset ─────────────────────────────────────────────────────
+document.getElementById('btn-apply').addEventListener('click', () => loadLedger(1));
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  document.getElementById('filter-id').value = '';
+  document.getElementById('filter-hour').value = '';
+  document.getElementById('filter-day').value = '';
+  document.getElementById('filter-month').value = '';
+  document.getElementById('filter-vendor').value = '';
+  document.getElementById('filter-passengers').value = '';
+  document.getElementById('filter-sort').value = 'trip_duration';
+  document.getElementById('filter-order').value = 'DESC';
+  loadLedger(1);
+});
+
+// ─── Initialize ────────────────────────────────────────────────────────
+loadOverview();

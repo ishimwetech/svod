@@ -1,192 +1,919 @@
-"""Dataxis SVOD Analysis — Flask Backend"""
-import csv, sqlite3, logging, sys, urllib.request
+"""
+NYC Taxi Trip Explorer
+=======================================
+Data cleaning pipeline, REST API endpoints, and SQLite database management
+for the NYC Taxi Trip Duration dataset.
+"""
+import os
+import sys
+import csv
+import math
+import json
+import sqlite3
+import logging
 from datetime import datetime
-from pathlib import Path
-from flask import Flask, jsonify, request, send_from_directory
-from flask_cors import CORS
-
-ROOT  = Path(__file__).resolve().parent.parent
-CSV   = ROOT / "data"     / "data.csv"
-DB    = ROOT / "database" / "svod.db"
-LOG   = ROOT / "logs"     / "pipeline.log"
-FRONT = ROOT / "frontend"
-DROPBOX = ("https://www.dropbox.com/scl/fi/a0m7c4h4jwg0lpnnvcp5y/data.csv"
-           "?rlkey=5gffw5lzjf2h45cgr7xrwrrgy&st=d16jyq5v&dl=1")
-
-logging.basicConfig(level=logging.INFO,
+from flask import Flask, jsonify, request, send_from_directory, g
+# ─── Configuration ─────────────────────────────────────────────────────────────
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(BASE_DIR)
+DB_PATH = os.path.join(PROJECT_DIR, "database", "nyc_taxi.db")
+CSV_PATH = os.path.join(PROJECT_DIR, "data", "train.csv")
+FRONTEND_DIR = os.path.join(PROJECT_DIR, "frontend")
+LOG_PATH = os.path.join(PROJECT_DIR, "logs", "pipeline.log")
+app = Flask(__name__, static_folder=FRONTEND_DIR)
+# ─── Logging ───────────────────────────────────────────────────────────────────
+os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.FileHandler(LOG), logging.StreamHandler(sys.stdout)])
-log = logging.getLogger(__name__)
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(LOG_PATH, mode="w"),
+    ],
+)
+logger = logging.getLogger("pipeline")
+# ─── Database Connection ──────────────────────────────────────────────────────
+def get_db():
+    if "db" not in g:
+        g.db = sqlite3.connect(DB_PATH)
+        g.db.row_factory = sqlite3.Row
+        g.db.execute("PRAGMA journal_mode=WAL")
+        g.db.execute("PRAGMA foreign_keys=ON")
+    return g.db
+@app.teardown_appcontext
+def close_db(exception):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
+# ─── Database Schema ──────────────────────────────────────────────────────────
+SCHEMA_SQL = """
+DROP TABLE IF EXISTS trip_flags;
+DROP TABLE IF EXISTS trips;
+DROP TABLE IF EXISTS time_slots;
+DROP TABLE IF EXISTS zones;
+DROP TABLE IF EXISTS cleaning_log;
+CREATE TABLE zones (
+    zone_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    zone_name TEXT NOT NULL UNIQUE,
+    avg_lat REAL NOT NULL,
+    avg_lon REAL NOT NULL,
+    trip_count INTEGER DEFAULT 0
+);
+CREATE TABLE time_slots (
+    slot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hour_of_day INTEGER NOT NULL,
+    day_of_week INTEGER NOT NULL,
+    period TEXT NOT NULL CHECK(period IN ('morning','afternoon','evening','night')),
+    is_weekend INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(hour_of_day, day_of_week)
+);
+CREATE TABLE trips (
+    trip_id TEXT PRIMARY KEY,
+    vendor_id INTEGER NOT NULL,
+    pickup_datetime TEXT NOT NULL,
+    dropoff_datetime TEXT NOT NULL,
+    passenger_count INTEGER NOT NULL,
+    pickup_longitude REAL NOT NULL,
+    pickup_latitude REAL NOT NULL,
+    dropoff_longitude REAL NOT NULL,
+    dropoff_latitude REAL NOT NULL,
+    store_and_fwd_flag INTEGER NOT NULL DEFAULT 0,
+    trip_duration INTEGER NOT NULL,
+    -- Derived features
+    distance_km REAL NOT NULL,
+    speed_kmh REAL NOT NULL,
+    hour_of_day INTEGER NOT NULL,
+    day_of_week INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    -- Foreign keys
+    pickup_zone_id INTEGER,
+    time_slot_id INTEGER,
+    FOREIGN KEY (pickup_zone_id) REFERENCES zones(zone_id),
+    FOREIGN KEY (time_slot_id) REFERENCES time_slots(slot_id)
+);
+CREATE TABLE trip_flags (
+    flag_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trip_id TEXT NOT NULL,
+    flag_type TEXT NOT NULL,
+    description TEXT,
+    FOREIGN KEY (trip_id) REFERENCES trips(trip_id) ON DELETE CASCADE
+);
+CREATE TABLE cleaning_log (
+    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stage TEXT NOT NULL,
+    records_in INTEGER,
+    records_out INTEGER,
+    records_excluded INTEGER,
+    reason TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+"""
+# Indexes created AFTER bulk insert for massive speedup
+INDEX_SQL = """
+CREATE INDEX idx_trips_hour ON trips(hour_of_day);
+CREATE INDEX idx_trips_dow ON trips(day_of_week);
+CREATE INDEX idx_trips_month ON trips(month);
+CREATE INDEX idx_trips_vendor ON trips(vendor_id);
+CREATE INDEX idx_trips_duration ON trips(trip_duration);
+CREATE INDEX idx_trips_distance ON trips(distance_km);
+CREATE INDEX idx_trips_speed ON trips(speed_kmh);
+CREATE INDEX idx_trips_passengers ON trips(passenger_count);
+CREATE INDEX idx_trips_pickup_zone ON trips(pickup_zone_id);
+CREATE INDEX idx_trips_time_slot ON trips(time_slot_id);
+CREATE INDEX idx_flags_trip ON trip_flags(trip_id);
+CREATE INDEX idx_flags_type ON trip_flags(flag_type);
+"""
+# ─── Haversine Distance (no external libraries) ──────────────────────────────
+def haversine(lat1, lon1, lat2, lon2):
+    """Calculate distance in km between two GPS coordinates."""
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2 +
+         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+         math.sin(dlon / 2) ** 2)
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+# ─── Custom QuickSort (no built-in sort) ──────────────────────────────────────
+def quicksort(arr, key_func):
+    """
+    Custom QuickSort implementation — manual, no built-in sort.
+    Uses median-of-three pivot selection for better performance.
+    Time Complexity: O(n log n) average, O(n^2) worst case
+    Space Complexity: O(log n) for recursion stack
+    """
+    if len(arr) <= 1:
+        return arr
+    def _sort(a, lo, hi):
+        if lo >= hi:
+            return
+        mid = (lo + hi) // 2
+        if key_func(a[lo]) > key_func(a[mid]):
+            a[lo], a[mid] = a[mid], a[lo]
+        if key_func(a[lo]) > key_func(a[hi]):
+            a[lo], a[hi] = a[hi], a[lo]
+        if key_func(a[mid]) > key_func(a[hi]):
+            a[mid], a[hi] = a[hi], a[mid]
+        a[mid], a[hi] = a[hi], a[mid]
+        pivot_val = key_func(a[hi])
+        i = lo
+        for j in range(lo, hi):
+            if key_func(a[j]) <= pivot_val:
+                a[i], a[j] = a[j], a[i]
+                i += 1
+        a[i], a[hi] = a[hi], a[i]
+        _sort(a, lo, i - 1)
+        _sort(a, i + 1, hi)
+    _sort(arr, 0, len(arr) - 1)
+    return arr
+# ─── Custom Frequency Counter (no Counter/collections) ────────────────────────
+def frequency_count(items):
+    """
+    Manual frequency counter — no collections.Counter.
+    Returns dict of {item: count} sorted by count descending (using our quicksort).
+    """
+    freq = {}
+    for item in items:
+        if item in freq:
+            freq[item] += 1
+        else:
+            freq[item] = 1
+    pairs = [{"key": k, "count": v} for k, v in freq.items()]
+    quicksort(pairs, lambda x: -x["count"])
+    return pairs
+# ─── Zone Classification (grid-based, no external geocoding) ──────────────────
+def classify_zone(lat, lon):
+    """Classify a GPS point into a named NYC zone using piecewise boundaries."""
 
-app = Flask(__name__, static_folder=str(FRONT))
-CORS(app)
+    # Manhattan
+    if 40.701 <= lat <= 40.882:
+        if lat < 40.710: m_east, m_west = -74.000, -74.020
+        elif lat < 40.720: m_east, m_west = -73.973, -74.019
+        elif lat < 40.732: m_east, m_west = -73.971, -74.015
+        elif lat < 40.745: m_east, m_west = -73.972, -74.013
+        elif lat < 40.760: m_east, m_west = -73.965, -74.008
+        elif lat < 40.775: m_east, m_west = -73.948, -74.000
+        elif lat < 40.790: m_east, m_west = -73.935, -73.992
+        elif lat < 40.810: m_east, m_west = -73.929, -73.975
+        elif lat < 40.835: m_east, m_west = -73.928, -73.958
+        elif lat < 40.860: m_east, m_west = -73.920, -73.948
+        else:              m_east, m_west = -73.906, -73.932
 
-def run_etl():
-    if not CSV.exists():
-        log.info("Downloading CSV…"); urllib.request.urlretrieve(DROPBOX, CSV)
-    con = sqlite3.connect(DB); cur = con.cursor()
-    cur.execute("DROP TABLE IF EXISTS svod")
-    cur.execute("""CREATE TABLE svod(actor TEXT,fact_date TEXT,value INTEGER,year INTEGER,quarter TEXT)""")
-    cur.execute("CREATE INDEX IF NOT EXISTS ia ON svod(actor)")
-    cur.execute("CREATE INDEX IF NOT EXISTS id ON svod(fact_date)")
-    n = 0
-    with open(CSV, newline="", encoding="utf-8-sig") as f:
-        for row in csv.DictReader(f):
-            try:
-                d = row["Fact_date"].strip()
-                dt = datetime.strptime(d, "%Y-%m-%d")
-                cur.execute("INSERT INTO svod VALUES(?,?,?,?,?)",
-                    (row["Actor_label"].strip(), d, int(float(row["Kpi_value"].strip())),
-                     dt.year, f"Q{(dt.month-1)//3+1} {dt.year}"))
-                n += 1
-            except: pass
-    con.commit(); con.close(); log.info("ETL: %d rows", n)
+        if m_west <= lon <= m_east:
+            if lat < 40.715:
+                return "Lower Manhattan / Financial District"
+            elif lat < 40.725:
+                return "Tribeca / SoHo" if lon < -74.000 else "Lower East Side / Chinatown"
+            elif lat < 40.745:
+                if lon < -74.000:
+                    return "West Village / Meatpacking"
+                elif lon < -73.985:
+                    return "East Village / NoHo"
+                else:
+                    return "Stuyvesant / LES North"
+            elif lat < 40.755:
+                if lon < -73.998:
+                    return "Chelsea / Hudson Yards"
+                elif lon < -73.983:
+                    return "Midtown South / Flatiron"
+                else:
+                    return "Gramercy / Murray Hill"
+            elif lat < 40.775:
+                if lon < -73.981:
+                    return "Midtown West / Times Square"
+                elif lon < -73.968:
+                    return "Midtown East / Grand Central"
+                else:
+                    return "Upper East Side South"
+            elif lat < 40.800:
+                return "Upper West Side" if lon < -73.968 else "Upper East Side"
+            elif lat < 40.820:
+                return "Morningside Heights" if lon < -73.955 else "East Harlem"
+            elif lat < 40.840:
+                return "Harlem"
+            elif lat < 40.867:
+                return "Washington Heights"
+            else:
+                return "Inwood"
 
-def db():
-    c = sqlite3.connect(DB); c.row_factory = sqlite3.Row; return c
+    # Bronx
+    if 40.785 <= lat <= 40.920 and -73.930 <= lon <= -73.760:
+        if lat < 40.830 and lon < -73.900:
+            return "South Bronx"
+        if lon > -73.870:
+            return "East Bronx"
+        return "Central Bronx"
 
-@app.route("/api/kpis")
-def api_kpis():
-    con = db(); cur = con.cursor()
-    cur.execute("""SELECT SUM(s.value) t, COUNT(DISTINCT s.actor) p FROM svod s
-        JOIN (SELECT actor,MAX(fact_date) m FROM svod GROUP BY actor) x
-        ON s.actor=x.actor AND s.fact_date=x.m""")
-    r = cur.fetchone()
-    cur.execute("SELECT SUM(value) v FROM svod WHERE fact_date='2021-12-31'"); y21=cur.fetchone()["v"] or 0
-    cur.execute("SELECT SUM(value) v FROM svod WHERE fact_date='2022-12-31'"); y22=cur.fetchone()["v"] or 0
-    con.close()
-    return jsonify({"total":r["t"]or 0,"platforms":r["p"]or 0,"eoy21":y21,"eoy22":y22,
-                    "growth":round((y22-y21)/y21*100,1) if y21 else 0})
+    # North Brooklyn
+    if 40.700 <= lat < 40.736 and -73.965 <= lon <= -73.900:
+        return "North Brooklyn"
 
-@app.route("/api/market_total")
-def api_market():
-    con=db();cur=con.cursor()
-    cur.execute("SELECT fact_date,SUM(value) total FROM svod GROUP BY fact_date ORDER BY fact_date")
-    data=[dict(r) for r in cur.fetchall()]; con.close(); return jsonify(data)
+    # Brooklyn
+    if 40.550 <= lat <= 40.740 and -74.050 <= lon <= -73.855:
+        if lat < 40.635:
+            return "South Brooklyn"
+        elif lon < -73.950:
+            return "West Brooklyn"
+        else:
+            return "Central Brooklyn"
 
-@app.route("/api/top")
-def api_top():
-    n=min(int(request.args.get("n",15)),50)
-    con=db();cur=con.cursor()
-    cur.execute("""SELECT s.actor,s.value subs,s.fact_date FROM svod s
-        JOIN (SELECT actor,MAX(fact_date) m FROM svod GROUP BY actor) x
-        ON s.actor=x.actor AND s.fact_date=x.m ORDER BY subs DESC LIMIT ?""",(n,))
-    data=[dict(r) for r in cur.fetchall()]; con.close(); return jsonify(data)
+    # Queens
+    if 40.540 <= lat <= 40.800 and -73.965 <= lon <= -73.700:
+        if lat < 40.680:
+            return "South Queens"
+        elif lon < -73.880:
+            return "West Queens"
+        else:
+            return "East Queens"
 
-@app.route("/api/trends")
-def api_trends():
-    raw=request.args.get("actors","Netflix,Amazon Prime Video,Disney+,Hulu,Paramount+,HBO Max (2020-2023),ESPN D2C,Apple TV+,Peacock Premium")
-    actors=[a.strip() for a in raw.split(",") if a.strip()]
-    ph=",".join("?"*len(actors))
-    con=db();cur=con.cursor()
-    cur.execute(f"SELECT actor,fact_date,value FROM svod WHERE actor IN ({ph}) ORDER BY actor,fact_date",actors)
-    out={}
-    for r in cur.fetchall(): out.setdefault(r["actor"],[]).append({"date":r["fact_date"],"value":r["value"]})
-    con.close(); return jsonify(out)
+    # Staten Island
+    if 40.490 <= lat <= 40.650 and -74.260 <= lon <= -74.050:
+        return "Staten Island"
 
-@app.route("/api/share")
-def api_share():
-    date=request.args.get("date","2022-12-31")
-    con=db();cur=con.cursor()
-    cur.execute("SELECT actor,value FROM svod WHERE fact_date=? ORDER BY value DESC",(date,))
-    rows=[dict(r) for r in cur.fetchall()]; con.close()
-    total=sum(r["value"] for r in rows)
-    for r in rows: r["pct"]=round(r["value"]/total*100,2) if total else 0
-    return jsonify({"date":date,"total":total,"platforms":rows})
+    # Staten Island
+    if 40.490 <= lat <= 40.650 and -74.260 <= lon <= -74.050:
+        return "Staten Island"
 
-@app.route("/api/growth")
-def api_growth():
-    con=db();cur=con.cursor()
-    cur.execute("""SELECT a.actor,a.value v21,b.value v22,
-        ROUND((CAST(b.value AS REAL)-a.value)/a.value*100,1) pct,(b.value-a.value) added
-        FROM (SELECT actor,value FROM svod WHERE fact_date='2021-12-31') a
-        JOIN (SELECT actor,value FROM svod WHERE fact_date='2022-12-31') b ON a.actor=b.actor
-        WHERE a.value>=50000 ORDER BY pct DESC LIMIT 20""")
-    data=[dict(r) for r in cur.fetchall()]; con.close(); return jsonify(data)
+    # Fallback
+    return "Outer Boroughs"
 
-@app.route("/api/segments")
-def api_segments():
-    con=db();cur=con.cursor()
-    cur.execute("""SELECT s.actor,s.value FROM svod s
-        JOIN (SELECT actor,MAX(fact_date) m FROM svod GROUP BY actor) x
-        ON s.actor=x.actor AND s.fact_date=x.m ORDER BY s.value DESC""")
-    segs={"Mega (50M+)":[],"Large (10–50M)":[],"Mid (1–10M)":[],"Small (100K–1M)":[],"Niche (<100K)":[]}
-    for r in cur.fetchall():
-        v=r["value"]
-        if v>=50_000_000: segs["Mega (50M+)"].append(r["actor"])
-        elif v>=10_000_000: segs["Large (10–50M)"].append(r["actor"])
-        elif v>=1_000_000: segs["Mid (1–10M)"].append(r["actor"])
-        elif v>=100_000: segs["Small (100K–1M)"].append(r["actor"])
-        else: segs["Niche (<100K)"].append(r["actor"])
-    con.close()
-    return jsonify({k:{"count":len(v),"actors":v} for k,v in segs.items()})
-
-@app.route("/api/explorer")
-def api_explorer():
-    page=max(1,int(request.args.get("page",1))); lim=min(int(request.args.get("limit",25)),100)
-    q=request.args.get("q","").strip(); sort=request.args.get("sort","v22")
-    order="ASC" if request.args.get("order","desc")=="asc" else "DESC"
-    valid={"actor","v21","v22","added","pct"}
-    if sort not in valid: sort="v22"
-    wh="WHERE actor LIKE ?" if q else ""; params=[f"%{q}%"] if q else []
-    con=db();cur=con.cursor()
-    # Use first and last available date per platform — shows ALL 131 platforms
-    cur.execute(f"""
-        SELECT actor, first_val v21, last_val v22,
-               (last_val - first_val) added,
-               CASE WHEN first_val > 0
-                    THEN ROUND((CAST(last_val AS REAL) - first_val) / first_val * 100, 1)
-                    ELSE NULL END pct
-        FROM (
-            SELECT s.actor,
-                   (SELECT value FROM svod WHERE actor=s.actor ORDER BY fact_date ASC  LIMIT 1) first_val,
-                   (SELECT value FROM svod WHERE actor=s.actor ORDER BY fact_date DESC LIMIT 1) last_val
-            FROM (SELECT DISTINCT actor FROM svod {wh}) s
+def get_period(hour):
+    """Classify hour into time period."""
+    if 6 <= hour < 12:
+        return "morning"
+    elif 12 <= hour < 17:
+        return "afternoon"
+    elif 17 <= hour < 21:
+        return "evening"
+    else:
+        return "night"
+# ─── Data Cleaning Pipeline ──────────────────────────────────────
+def run_pipeline(db_path=DB_PATH, csv_path=CSV_PATH, limit=None):
+    import time as _time
+    t_start = _time.time()
+    logger.info("=" * 60)
+    logger.info("NYC Taxi Trip Data Pipeline — Starting")
+    logger.info("=" * 60)
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    conn = sqlite3.connect(db_path, isolation_level=None)
+    conn.execute("PRAGMA synchronous = OFF")
+    conn.execute("PRAGMA journal_mode = MEMORY")
+    conn.execute("PRAGMA temp_store = MEMORY")
+    conn.execute("PRAGMA cache_size = -64000")
+    conn.execute("PRAGMA locking_mode = EXCLUSIVE")
+    conn.executescript(SCHEMA_SQL)
+    logger.info(f"Schema created ({_time.time() - t_start:.1f}s)")
+    if not os.path.exists(csv_path):
+        logger.error(f"CSV not found: {csv_path}")
+        conn.close()
+        return
+    # ── Pre-populate zones (all 31 possible from classify_zone) ──────────
+    # This lets us look up zone_id directly during streaming insert, avoiding
+    # a second pass over 1.4M rows to link zones.
+    ALL_ZONES = [
+        "Lower Manhattan / Financial District",
+        "Tribeca / SoHo",
+        "Lower East Side / Chinatown",
+        "West Village / Meatpacking",
+        "East Village / NoHo",
+        "Stuyvesant / LES North",
+        "Chelsea / Hudson Yards",
+        "Midtown South / Flatiron",
+        "Gramercy / Murray Hill",
+        "Midtown West / Times Square",
+        "Midtown East / Grand Central",
+        "Upper East Side South",
+        "Upper West Side",
+        "Upper East Side",
+        "Morningside Heights",
+        "East Harlem",
+        "Harlem",
+        "Washington Heights",
+        "Inwood",
+        "South Bronx",
+        "Central Bronx",
+        "East Bronx",
+        "North Brooklyn",
+        "South Brooklyn",
+        "West Brooklyn",
+        "Central Brooklyn",
+        "South Queens",
+        "West Queens",
+        "East Queens",
+        "Staten Island",
+        "Outer Boroughs",
+    ]
+    zone_id_map = {}
+    for zname in ALL_ZONES:
+        cur = conn.execute(
+            "INSERT INTO zones (zone_name, avg_lat, avg_lon, trip_count) VALUES (?,?,?,?)",
+            (zname, 0.0, 0.0, 0)
         )
-        ORDER BY {sort} {order}
-        LIMIT ? OFFSET ?
-    """, params + [lim, (page-1)*lim])
-    rows=[dict(r) for r in cur.fetchall()]
-    cur.execute(f"SELECT COUNT(DISTINCT actor) n FROM svod {wh}", params)
-    total=cur.fetchone()["n"]; con.close()
-    return jsonify({"data":rows,"total":total,"page":page,"pages":-(-total//lim)})
-
-@app.route("/api/declining")
-def api_declining():
-    """Platforms with net subscriber loss over their full tracked period."""
-    con=db();cur=con.cursor()
-    cur.execute("""
-        SELECT actor,
-          (SELECT value    FROM svod WHERE actor=s.actor ORDER BY fact_date ASC  LIMIT 1) v_first,
-          (SELECT value    FROM svod WHERE actor=s.actor ORDER BY fact_date DESC LIMIT 1) v_last,
-          (SELECT fact_date FROM svod WHERE actor=s.actor ORDER BY fact_date ASC  LIMIT 1) d_first,
-          (SELECT fact_date FROM svod WHERE actor=s.actor ORDER BY fact_date DESC LIMIT 1) d_last
-        FROM (SELECT DISTINCT actor FROM svod) s
-    """)
-    result=[]
-    for actor,v_first,v_last,d_first,d_last in cur.fetchall():
-        if v_first and v_first>0:
-            pct=round((v_last-v_first)/v_first*100,1)
-            if pct<0:
-                result.append({'actor':actor,'v_first':v_first,'v_last':v_last,
-                                'd_first':d_first,'d_last':d_last,'pct':pct})
-    result.sort(key=lambda x: x['pct'])
-    con.close()
-    return jsonify(result)
-
-
-    con=db();cur=con.cursor()
-    cur.execute("SELECT DISTINCT actor FROM svod ORDER BY actor")
-    actors=[r["actor"] for r in cur.fetchall()]; con.close(); return jsonify(actors)
-
+        zone_id_map[zname] = cur.lastrowid
+    zone_stats = {zname: [0.0, 0.0, 0] for zname in ALL_ZONES}
+    slot_id_map = {}
+    for h in range(24):
+        for d in range(7):
+            period = ('night' if h < 6 else 'morning' if h < 12
+                      else 'afternoon' if h < 17 else 'evening' if h < 21 else 'night')
+            is_wk = 1 if d >= 5 else 0
+            cur = conn.execute(
+                "INSERT INTO time_slots (hour_of_day, day_of_week, period, is_weekend) VALUES (?,?,?,?)",
+                (h, d, period, is_wk)
+            )
+            slot_id_map[(h, d)] = cur.lastrowid
+    NYC_LAT_MIN, NYC_LAT_MAX = 40.49, 40.92
+    NYC_LON_MIN, NYC_LON_MAX = -74.27, -73.68
+    R2 = 12742.0
+    PI_180 = 0.017453292519943295
+    sin = math.sin
+    cos = math.cos
+    asin = math.asin
+    sqrt = math.sqrt
+    _classify_zone = classify_zone
+    raw_count = 0
+    valid_count = 0
+    ex_missing = 0
+    ex_coords = 0
+    ex_dur_low = 0
+    ex_dur_high = 0
+    ex_pax = 0
+    ex_zero_dist = 0
+    ex_far_dist = 0
+    ex_speed = 0
+    BATCH_SIZE = 10000
+    trip_batch = []
+    flag_batch = []
+    INSERT_TRIP = """INSERT OR IGNORE INTO trips
+        (trip_id, vendor_id, pickup_datetime, dropoff_datetime, passenger_count,
+         pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude,
+         store_and_fwd_flag, trip_duration, distance_km, speed_kmh,
+         hour_of_day, day_of_week, month, pickup_zone_id, time_slot_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+    INSERT_FLAG = "INSERT INTO trip_flags (trip_id, flag_type, description) VALUES (?,?,?)"
+    logger.info("Stage 1/3: Streaming CSV and inserting trips...")
+    conn.execute("BEGIN")
+    with open(csv_path, "r", buffering=1 << 20) as f:
+        first_line = f.readline()
+        f.seek(0)
+        delim = '\t' if first_line.count('\t') > first_line.count(',') else ','
+        logger.info(f"  Detected delimiter: {'TAB' if delim == chr(9) else 'COMMA'}")
+        reader = csv.reader(f, delimiter=delim)
+        header = next(reader)
+        try:
+            c_id = header.index("id")
+            c_vendor = header.index("vendor_id")
+            c_pickup = header.index("pickup_datetime")
+            c_dropoff = header.index("dropoff_datetime")
+            c_pax = header.index("passenger_count")
+            c_plon = header.index("pickup_longitude")
+            c_plat = header.index("pickup_latitude")
+            c_dlon = header.index("dropoff_longitude")
+            c_dlat = header.index("dropoff_latitude")
+            c_sfwd = header.index("store_and_fwd_flag")
+            c_dur = header.index("trip_duration")
+        except ValueError as e:
+            logger.error(f"CSV missing required column: {e}")
+            conn.rollback()
+            conn.close()
+            return
+        for row in reader:
+            raw_count += 1
+            if limit and raw_count > limit:
+                break
+            try:
+                trip_id = row[c_id]
+                vendor = int(row[c_vendor])
+                pickup_dt = row[c_pickup]
+                dropoff_dt = row[c_dropoff]
+                passengers = int(row[c_pax])
+                p_lon = float(row[c_plon])
+                p_lat = float(row[c_plat])
+                d_lon = float(row[c_dlon])
+                d_lat = float(row[c_dlat])
+                duration = int(row[c_dur])
+            except (IndexError, ValueError):
+                ex_missing += 1
+                continue
+            if (p_lat < NYC_LAT_MIN or p_lat > NYC_LAT_MAX or
+                p_lon < NYC_LON_MIN or p_lon > NYC_LON_MAX or
+                d_lat < NYC_LAT_MIN or d_lat > NYC_LAT_MAX or
+                d_lon < NYC_LON_MIN or d_lon > NYC_LON_MAX):
+                ex_coords += 1
+                continue
+            if duration < 60:
+                ex_dur_low += 1
+                continue
+            if duration > 10800:
+                ex_dur_high += 1
+                continue
+            if passengers < 1 or passengers > 6:
+                ex_pax += 1
+                continue
+            dlat = (d_lat - p_lat) * PI_180
+            dlon = (d_lon - p_lon) * PI_180
+            a = (sin(dlat * 0.5) ** 2 +
+                 cos(p_lat * PI_180) * cos(d_lat * PI_180) * sin(dlon * 0.5) ** 2)
+            distance = R2 * asin(sqrt(a))
+            if distance < 0.1:
+                ex_zero_dist += 1
+                continue
+            if distance > 200:
+                ex_far_dist += 1
+                continue
+            speed = distance * 3600.0 / duration
+            if speed > 150:
+                ex_speed += 1
+                continue
+            try:
+                if '/' in pickup_dt:
+                    date_part, time_part = pickup_dt.split(' ', 1)
+                    m_str, d_str, y_str = date_part.split('/')
+                    h_str, mi_str = time_part.split(':', 1)
+                    month = int(m_str)
+                    day_num = int(d_str)
+                    year = int(y_str)
+                    hour = int(h_str)
+                else:
+                    date_part, time_part = pickup_dt.split(' ', 1)
+                    year = int(date_part[0:4])
+                    month = int(date_part[5:7])
+                    day_num = int(date_part[8:10])
+                    hour = int(time_part[0:2])
+            except (ValueError, IndexError):
+                ex_missing += 1
+                continue
+            if month < 3:
+                zm = month + 12
+                zy = year - 1
+            else:
+                zm = month
+                zy = year
+            K = zy % 100
+            J = zy // 100
+            zeller = (day_num + (13 * (zm + 1)) // 5 + K + K // 4 + J // 4 + 5 * J) % 7
+            dow = (zeller + 5) % 7
+            zone_name = _classify_zone(p_lat, p_lon)
+            zs = zone_stats[zone_name]
+            zs[0] += p_lat
+            zs[1] += p_lon
+            zs[2] += 1
+            zone_id = zone_id_map[zone_name]
+            slot_id = slot_id_map.get((hour, dow))
+            store_fwd = 1 if row[c_sfwd] == "Y" else 0
+            month_val = month
+            distance_r = int(distance * 1000 + 0.5) / 1000.0
+            speed_r = int(speed * 100 + 0.5) / 100.0
+            trip_batch.append((
+                trip_id, vendor, pickup_dt, dropoff_dt, passengers,
+                p_lon, p_lat, d_lon, d_lat, store_fwd, duration,
+                distance_r, speed_r,
+                hour, dow, month_val,
+                zone_id,
+                slot_id
+            ))
+            if speed > 80:
+                flag_batch.append((trip_id, "high_speed", f"Speed: {speed:.1f} km/h"))
+            if duration > 7200:
+                flag_batch.append((trip_id, "long_trip", f"Duration: {duration // 60} min"))
+            if distance > 30:
+                flag_batch.append((trip_id, "long_distance", f"Distance: {distance:.1f} km"))
+            valid_count += 1
+            if len(trip_batch) >= BATCH_SIZE:
+                conn.executemany(INSERT_TRIP, trip_batch)
+                trip_batch.clear()
+                if valid_count % 100000 == 0:
+                    elapsed = _time.time() - t_start
+                    rate = valid_count / elapsed if elapsed > 0 else 0
+                    logger.info(f"  ...{valid_count:,} rows loaded ({rate:,.0f} rows/sec)")
+    if trip_batch:
+        conn.executemany(INSERT_TRIP, trip_batch)
+        trip_batch.clear()
+    if flag_batch:
+        conn.executemany(INSERT_FLAG, flag_batch)
+    t_load = _time.time() - t_start
+    logger.info(f"  Raw records: {raw_count:,}")
+    logger.info(f"  Valid records: {valid_count:,}")
+    excluded = {
+        "missing_fields": ex_missing, "invalid_coords": ex_coords,
+        "invalid_duration": ex_dur_low, "outlier_duration": ex_dur_high,
+        "invalid_passengers": ex_pax, "zero_distance": ex_zero_dist,
+        "outlier_distance": ex_far_dist, "outlier_speed": ex_speed,
+    }
+    for reason, count in excluded.items():
+        if count > 0:
+            logger.info(f"  Excluded ({reason}): {count:,}")
+    logger.info(f"Stage 1 complete in {t_load:.1f}s")
+    logger.info("Stage 2/3: Updating zone statistics...")
+    t_stage2 = _time.time()
+    zone_updates = []
+    for zname, (lat_sum, lon_sum, cnt) in zone_stats.items():
+        if cnt > 0:
+            zone_updates.append((round(lat_sum / cnt, 6), round(lon_sum / cnt, 6), cnt, zone_id_map[zname]))
+    conn.executemany(
+        "UPDATE zones SET avg_lat=?, avg_lon=?, trip_count=? WHERE zone_id=?",
+        zone_updates
+    )
+    conn.execute("DELETE FROM zones WHERE trip_count = 0")
+    logger.info(f"  Active zones: {sum(1 for (_,_,c,_) in zone_updates if c > 0)}")
+    logger.info(f"Stage 2 complete in {_time.time() - t_stage2:.1f}s")
+    conn.execute(
+        "INSERT INTO cleaning_log (stage, records_in, records_out, records_excluded, reason) VALUES (?,?,?,?,?)",
+        ("validation", raw_count, valid_count, sum(excluded.values()), json.dumps(excluded))
+    )
+    conn.execute(
+        "INSERT INTO cleaning_log (stage, records_in, records_out, records_excluded, reason) VALUES (?,?,?,?,?)",
+        ("insertion", valid_count, valid_count, len(flag_batch), f"{len(flag_batch)} flagged trips")
+    )
+    conn.commit()
+    logger.info("Stage 3/3: Creating indexes...")
+    t_idx = _time.time()
+    conn.executescript(INDEX_SQL)
+    conn.execute("ANALYZE")
+    logger.info(f"Indexes created in {_time.time() - t_idx:.1f}s")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.close()
+    total = _time.time() - t_start
+    logger.info("=" * 60)
+    logger.info(f"Pipeline complete in {total:.1f}s  ({valid_count / total:,.0f} rows/sec)")
+    logger.info("=" * 60)
+# ─── API Endpoints ────────────────────────────────────────────────────────────
 @app.route("/")
-def index(): return send_from_directory(FRONT,"report.html")
-@app.route("/report")
-def report(): return send_from_directory(FRONT,"report.html")
-@app.route("/<path:p>")
-def static_f(p): return send_from_directory(FRONT,p)
-
-if __name__=="__main__":
-    run_etl()
-    log.info("http://localhost:5000")
-    app.run(host="0.0.0.0",port=5000,debug=False)
+def index():
+    return send_from_directory(FRONTEND_DIR, "index.html")
+@app.route("/<path:filename>")
+def static_files(filename):
+    return send_from_directory(FRONTEND_DIR, filename)
+@app.route("/api/stats")
+def api_stats():
+    db = get_db()
+    stats = {}
+    row = db.execute("SELECT COUNT(*) as total, AVG(trip_duration) as avg_dur, AVG(distance_km) as avg_dist, AVG(speed_kmh) as avg_speed, SUM(trip_duration) as total_dur FROM trips").fetchone()
+    stats["total_trips"] = row["total"]
+    stats["avg_duration_min"] = round(row["avg_dur"] / 60, 1) if row["avg_dur"] else 0
+    stats["avg_distance_km"] = round(row["avg_dist"], 2) if row["avg_dist"] else 0
+    stats["avg_speed_kmh"] = round(row["avg_speed"], 1) if row["avg_speed"] else 0
+    stats["total_hours"] = round(row["total_dur"] / 3600, 0) if row["total_dur"] else 0
+    row2 = db.execute("SELECT COUNT(*) as cnt FROM trip_flags").fetchone()
+    stats["flagged_trips"] = row2["cnt"]
+    return jsonify(stats)
+@app.route("/api/hourly")
+def api_hourly():
+    db = get_db()
+    rows = db.execute("""
+        SELECT hour_of_day, COUNT(*) as count,
+               AVG(trip_duration)/60 as avg_duration_min,
+               AVG(distance_km) as avg_distance,
+               AVG(speed_kmh) as avg_speed
+        FROM trips GROUP BY hour_of_day ORDER BY hour_of_day
+    """).fetchall()
+    return jsonify([dict(r) for r in rows])
+@app.route("/api/daily")
+def api_daily():
+    db = get_db()
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    rows = db.execute("""
+        SELECT day_of_week, COUNT(*) as count,
+               AVG(trip_duration)/60 as avg_duration_min,
+               AVG(distance_km) as avg_distance
+        FROM trips GROUP BY day_of_week ORDER BY day_of_week
+    """).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["day_name"] = days[d["day_of_week"]]
+        result.append(d)
+    return jsonify(result)
+@app.route("/api/monthly")
+def api_monthly():
+    db = get_db()
+    months = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    rows = db.execute("""
+        SELECT month, COUNT(*) as count,
+               AVG(trip_duration)/60 as avg_duration_min,
+               AVG(distance_km) as avg_distance
+        FROM trips GROUP BY month ORDER BY month
+    """).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["month_name"] = months[d["month"]] if d["month"] < len(months) else str(d["month"])
+        result.append(d)
+    return jsonify(result)
+@app.route("/api/zones")
+def api_zones():
+    db = get_db()
+    rows = db.execute("""
+        SELECT z.zone_name, z.trip_count, z.avg_lat, z.avg_lon,
+               AVG(t.trip_duration)/60 as avg_duration_min,
+               AVG(t.distance_km) as avg_distance,
+               AVG(t.speed_kmh) as avg_speed
+        FROM zones z
+        LEFT JOIN trips t ON t.pickup_zone_id = z.zone_id
+        GROUP BY z.zone_id
+        ORDER BY z.trip_count DESC
+    """).fetchall()
+    return jsonify([dict(r) for r in rows])
+@app.route("/api/duration_distribution")
+def api_duration_dist():
+    db = get_db()
+    buckets = [
+        ("0-5 min", 0, 300),
+        ("5-10 min", 300, 600),
+        ("10-15 min", 600, 900),
+        ("15-20 min", 900, 1200),
+        ("20-30 min", 1200, 1800),
+        ("30-45 min", 1800, 2700),
+        ("45-60 min", 2700, 3600),
+        ("60+ min", 3600, 999999),
+    ]
+    result = []
+    for label, lo, hi in buckets:
+        row = db.execute(
+            "SELECT COUNT(*) as count FROM trips WHERE trip_duration >= ? AND trip_duration < ?",
+            (lo, hi)
+        ).fetchone()
+        result.append({"label": label, "count": row["count"]})
+    return jsonify(result)
+@app.route("/api/speed_distribution")
+def api_speed_dist():
+    db = get_db()
+    buckets = [
+        ("0-5", 0, 5), ("5-10", 5, 10), ("10-15", 10, 15),
+        ("15-20", 15, 20), ("20-25", 20, 25), ("25-30", 25, 30),
+        ("30-40", 30, 40), ("40-50", 40, 50), ("50+", 50, 999),
+    ]
+    result = []
+    for label, lo, hi in buckets:
+        row = db.execute(
+            "SELECT COUNT(*) as count FROM trips WHERE speed_kmh >= ? AND speed_kmh < ?",
+            (lo, hi)
+        ).fetchone()
+        result.append({"label": label + " km/h", "count": row["count"]})
+    return jsonify(result)
+@app.route("/api/vendor_comparison")
+def api_vendor():
+    db = get_db()
+    rows = db.execute("""
+        SELECT vendor_id, COUNT(*) as count,
+               AVG(trip_duration)/60 as avg_duration_min,
+               AVG(distance_km) as avg_distance,
+               AVG(speed_kmh) as avg_speed
+        FROM trips GROUP BY vendor_id
+    """).fetchall()
+    return jsonify([dict(r) for r in rows])
+@app.route("/api/passengers")
+def api_passengers():
+    db = get_db()
+    rows = db.execute("""
+        SELECT passenger_count, COUNT(*) as count,
+               AVG(trip_duration)/60 as avg_duration_min,
+               AVG(distance_km) as avg_distance
+        FROM trips GROUP BY passenger_count ORDER BY passenger_count
+    """).fetchall()
+    return jsonify([dict(r) for r in rows])
+@app.route("/api/trips")
+def api_trips():
+    db = get_db()
+    page = int(request.args.get("page", 1))
+    per_page = int(request.args.get("per_page", 50))
+    offset = (page - 1) * per_page
+    conditions = []
+    params = []
+    trip_id = request.args.get("trip_id")
+    if trip_id:
+        conditions.append("trip_id LIKE ?")
+        params.append(f"%{trip_id}%")
+    passengers = request.args.get("passengers")
+    if passengers is not None and passengers != "":
+        conditions.append("passenger_count = ?")
+        params.append(int(passengers))
+    month = request.args.get("month")
+    if month is not None and month != "":
+        conditions.append("month = ?")
+        params.append(int(month))
+    hour = request.args.get("hour")
+    if hour is not None and hour != "":
+        conditions.append("hour_of_day = ?")
+        params.append(int(hour))
+    dow = request.args.get("day")
+    if dow is not None and dow != "":
+        conditions.append("day_of_week = ?")
+        params.append(int(dow))
+    vendor = request.args.get("vendor")
+    if vendor is not None and vendor != "":
+        conditions.append("vendor_id = ?")
+        params.append(int(vendor))
+    min_dist = request.args.get("min_distance")
+    if min_dist is not None and min_dist != "":
+        conditions.append("distance_km >= ?")
+        params.append(float(min_dist))
+    max_dist = request.args.get("max_distance")
+    if max_dist is not None and max_dist != "":
+        conditions.append("distance_km <= ?")
+        params.append(float(max_dist))
+    sort_by = request.args.get("sort", "trip_duration")
+    sort_order = request.args.get("order", "DESC")
+    allowed_sorts = ["trip_duration", "distance_km", "speed_kmh", "pickup_datetime", "passenger_count"]
+    if sort_by not in allowed_sorts:
+        sort_by = "trip_duration"
+    if sort_order not in ("ASC", "DESC"):
+        sort_order = "DESC"
+    where = " AND ".join(conditions) if conditions else "1=1"
+    count_row = db.execute(f"SELECT COUNT(*) as total FROM trips WHERE {where}", params).fetchone()
+    rows = db.execute(
+        f"""SELECT trip_id, vendor_id, pickup_datetime, dropoff_datetime,
+                   passenger_count, trip_duration, distance_km, speed_kmh,
+                   hour_of_day, day_of_week, month
+            FROM trips WHERE {where}
+            ORDER BY {sort_by} {sort_order}
+            LIMIT ? OFFSET ?""",
+        params + [per_page, offset]
+    ).fetchall()
+    return jsonify({
+        "total": count_row["total"],
+        "page": page,
+        "per_page": per_page,
+        "trips": [dict(r) for r in rows]
+    })
+@app.route("/api/flags")
+def api_flags():
+    db = get_db()
+    rows = db.execute("""
+        SELECT f.flag_type, COUNT(*) as count
+        FROM trip_flags f GROUP BY f.flag_type ORDER BY count DESC
+    """).fetchall()
+    return jsonify([dict(r) for r in rows])
+@app.route("/api/cleaning_log")
+def api_cleaning_log():
+    db = get_db()
+    rows = db.execute("SELECT * FROM cleaning_log ORDER BY log_id").fetchall()
+    return jsonify([dict(r) for r in rows])
+@app.route("/api/heatmap")
+def api_heatmap():
+    db = get_db()
+    rows = db.execute("""
+        SELECT hour_of_day, day_of_week, COUNT(*) as count,
+               AVG(trip_duration)/60 as avg_duration
+        FROM trips GROUP BY hour_of_day, day_of_week
+    """).fetchall()
+    return jsonify([dict(r) for r in rows])
+@app.route("/api/insights")
+def api_insights():
+    db = get_db()
+    insights = []
+    rush = db.execute("""
+        SELECT
+            CASE WHEN hour_of_day BETWEEN 7 AND 9 OR hour_of_day BETWEEN 17 AND 19
+                 THEN 'Rush Hour' ELSE 'Off-Peak' END as period,
+            AVG(speed_kmh) as avg_speed,
+            AVG(trip_duration)/60 as avg_duration,
+            COUNT(*) as trips
+        FROM trips GROUP BY period
+    """).fetchall()
+    insights.append({
+        "title": "Rush Hour Impact on Travel Speed",
+        "data": [dict(r) for r in rush],
+        "interpretation": "During rush hours (7-9 AM, 5-7 PM), average speeds drop significantly while trip durations increase, reflecting traffic congestion patterns typical of dense urban environments."
+    })
+    weekend = db.execute("""
+        SELECT
+            CASE WHEN day_of_week >= 5 THEN 'Weekend' ELSE 'Weekday' END as type,
+            AVG(distance_km) as avg_distance,
+            AVG(trip_duration)/60 as avg_duration,
+            AVG(speed_kmh) as avg_speed,
+            COUNT(*) as trips
+        FROM trips GROUP BY type
+    """).fetchall()
+    insights.append({
+        "title": "Weekend vs Weekday Travel Behavior",
+        "data": [dict(r) for r in weekend],
+        "interpretation": "Weekend trips tend to be longer in distance but with higher speeds due to reduced traffic, suggesting leisure-oriented travel compared to weekday commuting patterns."
+    })
+    zones = db.execute("""
+        SELECT z.zone_name, z.trip_count,
+               AVG(t.speed_kmh) as avg_speed
+        FROM zones z
+        JOIN trips t ON t.pickup_zone_id = z.zone_id
+        GROUP BY z.zone_id
+        ORDER BY z.trip_count DESC LIMIT 5
+    """).fetchall()
+    insights.append({
+        "title": "Busiest Pickup Zones in NYC",
+        "data": [dict(r) for r in zones],
+        "interpretation": "Midtown Manhattan dominates as the busiest pickup area, driven by its concentration of offices, hotels, and transit hubs. The speed variation across zones reflects different street grid designs and congestion levels."
+    })
+    return jsonify(insights)
+DATASET_URL = os.environ.get(
+    "DATASET_URL",
+    "https://www.dropbox.com/scl/fi/ega99tbyzalx9jagiabzc/train.csv?rlkey=dfrnzx8ai0l1morp2burays5s&st=ry40jiq1&dl=1"
+)
+def download_dataset(url=DATASET_URL, dest=CSV_PATH, chunk_size=1 << 20):
+    import urllib.request
+    import ssl
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    logger.info(f"Downloading dataset from {url[:80]}...")
+    try:
+        ctx = ssl.create_default_context()
+    except Exception:
+        ctx = ssl._create_unverified_context()
+    req = urllib.request.Request(url, headers={"User-Agent": "nyc-taxi-atlas/1.0"})
+    with urllib.request.urlopen(req, context=ctx, timeout=60) as resp:
+        total = int(resp.headers.get("Content-Length") or 0)
+        downloaded = 0
+        next_log = 10 * 1024 * 1024
+        with open(dest, "wb") as f:
+            while True:
+                chunk = resp.read(chunk_size)
+                if not chunk:
+                    break
+                f.write(chunk)
+                downloaded += len(chunk)
+                if downloaded >= next_log:
+                    mb = downloaded / (1024 * 1024)
+                    pct = f" ({downloaded * 100 / total:.0f}%)" if total else ""
+                    logger.info(f"  Downloaded {mb:.0f} MB{pct}")
+                    next_log += 10 * 1024 * 1024
+    final_mb = os.path.getsize(dest) / (1024 * 1024)
+    logger.info(f"Downloaded {final_mb:.0f} MB to {dest}")
+def db_has_data():
+    if not os.path.exists(DB_PATH):
+        return False
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='trips'")
+        if not cur.fetchone():
+            conn.close()
+            return False
+        cur = conn.execute("SELECT COUNT(*) FROM trips")
+        count = cur.fetchone()[0]
+        conn.close()
+        return count > 0
+    except sqlite3.Error:
+        return False
+def ensure_dataset_and_db():
+    if db_has_data():
+        logger.info("Database already populated. Skipping ETL.")
+        return
+    if not os.path.exists(CSV_PATH):
+        logger.info(f"CSV not found at {CSV_PATH}. Fetching from remote...")
+        try:
+            download_dataset()
+        except Exception as e:
+            logger.error(f"Failed to download dataset: {e}")
+            logger.error("Place train.csv in data/ folder manually, or set DATASET_URL env var.")
+            return
+    logger.info("Database empty or missing. Running ETL pipeline...")
+    if os.path.exists(DB_PATH):
+        os.remove(DB_PATH)
+    run_pipeline()
+if os.environ.get("AUTO_PREPARE", "1") == "1" and __name__ != "__main__":
+    try:
+        ensure_dataset_and_db()
+    except Exception as e:
+        logger.error(f"Auto-prepare failed at import time: {e}")
+if __name__ == "__main__":
+    ensure_dataset_and_db()
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port, debug=False)

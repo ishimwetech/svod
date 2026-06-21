@@ -3,541 +3,364 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dataxis : US SVOD Market Analysis 2021–2022</title>
-<meta name="description" content="Dataxis SVOD subscriber intelligence across 131 US platforms, Q1 2021–Q4 2022.">
-<link rel="icon" href="https://dataxis.com/wp-content/uploads/2021/05/cropped-social-favicon-32x32.png" sizes="32x32">
+<title>NYC Taxi Cartographic Atlas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,700;1,400;1,500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<style>
-.rpt-hero{background:var(--navy);background-image:radial-gradient(ellipse at 20% 60%,rgba(13,74,115,.6) 0%,transparent 55%),radial-gradient(ellipse at 80% 20%,rgba(247,148,31,.12) 0%,transparent 50%);color:#fff;padding:56px 24px 64px;}
-.rpt-hero-inner{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:1fr auto;gap:48px;align-items:start;}
-.rpt-issue{font-size:10px;font-weight:900;letter-spacing:2.5px;text-transform:uppercase;color:var(--orange);margin-bottom:12px;}
-.rpt-hero h1{font-size:clamp(22px,3.2vw,38px);font-weight:900;line-height:1.2;margin-bottom:14px;}
-.rpt-hero p{font-size:14.5px;opacity:.82;line-height:1.7;max-width:520px;}
-.rpt-right{text-align:right;}
-.rpt-brand{font-size:2rem;font-weight:900;letter-spacing:-1px;color:#fff;}
-.rpt-src{display:inline-block;border:1px solid rgba(255,255,255,.3);padding:5px 13px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#fff;margin-top:12px;}
-</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
-<!-- ═══════════════════════════════════════════════════════════
-     HEADER — exact Dataxis.com recreation
-═══════════════════════════════════════════════════════════ -->
-<!-- <header id="masthead"> -->
+<div class="paper-grain"></div>
+<div class="paper-creases"></div>
+<div class="paper-edge"></div>
 
-  <!-- Top row: Logo + search -->
-  <!-- <div class="header-top">
-    <a href="https://dataxis.com/" class="site-logo" title="Dataxis">
-      <img src="https://dataxis.com/wp-content/themes/dataxis%20copy/assets/dataxis-logo.png"
-           alt="Dataxis" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
-      <span style="display:none;font-size:2rem;font-weight:900;color:#083050;letter-spacing:-1px;">Dataxis</span>
-    </a>
-    <div class="header-search-wrap">
-      <form class="header-search-form" action="https://dataxis.com" method="get">
-        <input type="search" name="s" placeholder="Find data, forecasts and reports by keywords">
-        <button type="submit">SEARCH</button>
-      </form>
-    </div>
-  </div> -->
-
-  <!-- Nav bar -->
-  <!-- <div class="header-nav-bar">
-    <div class="nav-left">
-      <div class="nav-item" id="nav-mi">
-        <a href="https://dataxis.com/market-intelligence-services">Market Intelligence</a>
-        <span class="caret">&#9660;</span>
-        <div class="dropdown">
-          <a href="https://dataxis.com/our-data/">Insights &amp; Analytics</a>
-          <a href="https://dataxis.com/research-highlights/">Research Highlights</a>
-          <a href="https://dataxis.com/consumer-surveys/">Consumer Surveys</a>
-          <a href="https://dataxis.com/webinars/?_webinars_statuses=upcoming">Webinars</a>
-        </div>
-      </div>
-      <a class="nav-item" href="https://conferences.dataxis.com/" target="_blank">Conferences</a>
-      <div class="nav-item" id="nav-adv">
-        <a href="https://dataxis.com/advertising">Advertising</a>
-        <span class="caret">&#9660;</span>
-        <div class="dropdown">
-          <a href="https://dataxis.com/whitepapers/">Whitepapers</a>
-          <a href="https://dataxis.com/advertising/#dataxis-email-blasts">Email Blasts</a>
-        </div>
-      </div>
-      <div class="nav-item" id="nav-about">
-        <a href="https://dataxis.com/about-us">About Us</a>
-        <span class="caret">&#9660;</span>
-        <div class="dropdown">
-          <a href="https://dataxis.com/about-us/">Our Story</a>
-          <a href="https://dataxis.com/dataxis-news/">News</a>
-          <a href="https://dataxis.com/help-and-support/">FAQs</a>
-          <a href="https://dataxis.com/contact-us/">Contact Us</a>
-        </div>
-      </div>
-    </div>
-    <div class="nav-right">
-      <a class="nav-item book-demo" href="https://dataxis.com/contact-us/">Book a Demo</a>
-      <a class="nav-item free-trial" href="https://dataxis.com/register">Free Trial</a>
-      <a class="nav-item login" href="https://dataxis.com/login">Login/Register</a>
-    </div>
+<header class="title-block">
+  <div class="title-stamp">
+    <svg viewBox="0 0 80 80" class="seal">
+      <circle cx="40" cy="40" r="36" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <circle cx="40" cy="40" r="30" fill="none" stroke="currentColor" stroke-width="0.6"/>
+      <circle cx="40" cy="40" r="22" fill="none" stroke="currentColor" stroke-width="0.6"/>
+      <text x="40" y="35" text-anchor="middle" font-family="DM Serif Display" font-size="10" font-weight="700" fill="currentColor">NYC</text>
+      <text x="40" y="48" text-anchor="middle" font-family="DM Mono" font-size="6" fill="currentColor">CARTO</text>
+      <text x="40" y="56" text-anchor="middle" font-family="DM Mono" font-size="6" fill="currentColor">2016</text>
+      <line x1="40" y1="4" x2="40" y2="10" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="40" y1="70" x2="40" y2="76" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="4" y1="40" x2="10" y2="40" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="70" y1="40" x2="76" y2="40" stroke="currentColor" stroke-width="1.2"/>
+      <text x="40" y="3" text-anchor="middle" font-family="DM Mono" font-size="5" fill="currentColor">N</text>
+    </svg>
   </div>
-</header> -->
-
-
-<!-- REPORT HERO -->
-<div class="rpt-hero">
-  <div class="rpt-hero-inner">
-    <div>
-      <!-- <div class="rpt-issue">April 2026 · Market Intelligence Report</div> -->
-      <h1>US SVOD Market Analysis<br>2021–2022</h1>
-      <p>A structured intelligence brief on the subscription video-on-demand market in the United States, tracking subscriber evolution across 131 platforms from Q1 2021 to Q4 2022.</p>
-    </div>
-    <div class="rpt-right">
-      <div style="font-size:10px;opacity:.55;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px;">Done by</div>
-      <div class="rpt-brand">Winebald</div>
-      <!-- <div style="font-size:11px;opacity:.5;margin-top:4px;">dataxis.com</div> -->
-      <!-- <div class="rpt-src">Dataxis</div> -->
-      <!-- <div style="margin-top:20px;"><a href="/" class="btn-view-more">&#8592; Back to Dashboard</a></div> -->
-    </div>
+  <div class="title-text">
+    <h1 class="title-main">A Cartographic Atlas of</h1>
+    <h1 class="title-main accent">New York Taxi Trips</h1>
+    <p class="title-sub">Compiled from 1,458,644 fare records taken across the five boroughs<br>between 1 January and 30 June, in the year 2016</p>
   </div>
+  <div class="title-meta">
+    <div class="meta-line"><span class="meta-key">Surveyors</span><span class="meta-val">Team Blue</span></div>
+    <div class="meta-line"><span class="meta-key">Source</span><span class="meta-val">NYC TLC / Kaggle</span></div>
+    <div class="meta-line"><span class="meta-key">Edition</span><span class="meta-val">First Folio</span></div>
+  </div>
+</header>
+
+<div class="graticule top">
+  <span>74°W</span><span>73°55'</span><span>73°50'</span><span>73°45'</span><span>73°40'</span>
+</div>
+<div class="graticule left">
+  <span>40°55'N</span><span>40°50'</span><span>40°45'</span><span>40°40'</span><span>40°35'</span>
+</div>
+<div class="graticule right">
+  <span>40°55'N</span><span>40°50'</span><span>40°45'</span><span>40°40'</span><span>40°35'</span>
 </div>
 
+<nav class="sheet-tabs">
+  <button class="sheet-tab active" data-view="overview">
+    <span class="tab-key">A</span>
+    <span class="tab-name">General Survey</span>
+  </button>
+  <button class="sheet-tab" data-view="rhythms">
+    <span class="tab-key">B</span>
+    <span class="tab-name">Temporal Charts</span>
+  </button>
+  <button class="sheet-tab" data-view="atlas">
+    <span class="tab-key">C</span>
+    <span class="tab-name">Borough Plates</span>
+  </button>
+  <button class="sheet-tab" data-view="ledger">
+    <span class="tab-key">D</span>
+    <span class="tab-name">Field Notebook</span>
+  </button>
+  <button class="sheet-tab" data-view="insights">
+    <span class="tab-key">E</span>
+    <span class="tab-name">Marginalia</span>
+  </button>
+</nav>
 
-<!-- ═══════════════════════════════════════════════════════════
-     WHAT WE DO
-═══════════════════════════════════════════════════════════ -->
-<!-- <section class="wwd-section" id="wwd">
-  <div class="wwd-inner">
-    <h2 class="wwd-title">What We Do</h2>
+<main>
 
-    <div class="wwd-layout"> -->
-      <!-- Tab buttons -->
-      <!-- <div class="wwd-tabs">
-        <button class="wwd-tab active" data-pane="pane-mi">
-          <div class="wwd-tab-icon"></div>
-          Market Intelligence
-        </button>
-        <button class="wwd-tab" data-pane="pane-events">
-          <div class="wwd-tab-icon"></div>
-          Events
-        </button>
-        <button class="wwd-tab" data-pane="pane-adv">
-          <div class="wwd-tab-icon"></div>
-          Advertising
-        </button>
+<!-- ═══ SHEET A: GENERAL SURVEY ═══ -->
+<section class="view active" id="view-overview">
+  <div class="legend-block">
+    <div class="legend-corner tl"></div>
+    <div class="legend-corner tr"></div>
+    <div class="legend-corner bl"></div>
+    <div class="legend-corner br"></div>
+    <div class="legend-header">
+      <span class="legend-title">SURVEY KEY  FIGURES</span>
+    </div>
+    <div class="key-grid">
+      <div class="key-item">
+        <div class="key-symbol">∑</div>
+        <div class="key-text">
+          <div class="key-label">Total fares enumerated</div>
+          <div class="key-value" data-stat="total_trips">——</div>
+        </div>
       </div>
-
-       Tab panes -->
-      <!-- <div>
-        <div class="wwd-pane active" id="pane-mi">
-          <div class="wwd-content">
-            <h3>The most granular and accurate market research at the tip of your fingers</h3>
-            <p>We track the TV, OTT, Telecom, Media and digital industries on a quarterly basis to cover more than 50 markets, 200 countries and over 4,000 players, including Tier 2 and Tier 3 companies.</p>
-            <p>For the US SVOD market, this dataset covers 131 platforms from Q1 2021 to Q4 2022, from mega-streamers to niche content specialists, measured on a consistent, comparable basis.</p>
-            <p>What we provide:</p>
-            <ul>
-              <li>Key Performance Indicators, statistics and forecasts worldwide.</li>
-              <li>Analysis of new trends and deep research with our reports.</li>
-              <li>Publication of research results by our analysts on distinct sectors.</li>
-            </ul>
-            <a href="https://dataxis.com/our-data/" class="btn-wwd" target="_blank">VIEW MARKET INTELLIGENCE OFFERS</a>
-          </div>
+      <div class="key-item">
+        <div class="key-symbol">⊙</div>
+        <div class="key-text">
+          <div class="key-label">Cumulative wheel-hours</div>
+          <div class="key-value" data-stat="total_hours">——</div>
         </div>
-        <div class="wwd-pane" id="pane-events">
-          <div class="wwd-content">
-            <h3>World-class events connecting industry leaders</h3>
-            <p>Dataxis organises conferences and events bringing together senior decision-makers from the TV, OTT, Telecom and Media industries.</p>
-            <ul>
-              <li>Annual summits in key global markets</li>
-              <li>Webinars featuring Dataxis analysts and industry experts</li>
-              <li>Networking opportunities with 4,000+ professionals</li>
-            </ul>
-            <a href="https://conferences.dataxis.com/" class="btn-wwd" target="_blank">VIEW UPCOMING EVENTS</a>
-          </div>
+      </div>
+      <div class="key-item">
+        <div class="key-symbol">↔</div>
+        <div class="key-text">
+          <div class="key-label">Mean range, kilometres</div>
+          <div class="key-value" data-stat="avg_distance_km">——</div>
         </div>
-        <div class="wwd-pane" id="pane-adv">
-          <div class="wwd-content">
-            <h3>Reach the decision-makers who matter</h3>
-            <p>Dataxis offers premium advertising opportunities to connect brands with senior professionals across the Media, Advertising and Telecom sectors globally.</p>
-            <ul>
-              <li>Targeted email blasts to segmented industry lists</li>
-              <li>Co-branded whitepapers and research reports</li>
-              <li>Sponsored content and banner placements</li>
-            </ul>
-            <a href="https://dataxis.com/advertising/" class="btn-wwd" target="_blank">VIEW ADVERTISING OPTIONS</a>
-          </div>
+      </div>
+      <div class="key-item">
+        <div class="key-symbol">⊳</div>
+        <div class="key-text">
+          <div class="key-label">Mean velocity, km/h</div>
+          <div class="key-value" data-stat="avg_speed_kmh">——</div>
         </div>
       </div>
     </div>
-
   </div>
-</section> -->
 
-
-<!-- ═══════════════════════════════════════════════════════════
-     RESEARCH HIGHLIGHTS
-═══════════════════════════════════════════════════════════ -->
-<section class="rh-section" id="highlights">
-  <div class="rh-inner">
-    <h2 class="rh-title">Research Highlights</h2>
-
-    <!-- Featured row: large chart + text -->
-    <div class="rh-top">
-      <div class="rh-featured-img">
-        <canvas id="rh-market"></canvas>
-      </div>
-      <div class="rh-featured-text">
-        <!-- <div class="rh-date">APRIL 2026</div> -->
-        <h3>Amazon &amp; Netflix anchor a market that grew 37.0%, from 372.6M to 510.3M subscribers</h3>
-        <p>The US SVOD aggregate subscriber pool grew from 372.6M in Q1 2021 to 510.3M by Q4 2022 (+37.0% full period; +15.3% YoY EOY 2021→2022), with Amazon Prime Video (98.8M) and Netflix (67.0M) as dominant anchors.</p>
-        <p style="margin-top:12px;font-size:13px;color:#999;">Source: Dataxis</p>
-      </div>
+  <div class="map-inset hero">
+    <div class="inset-header">
+      <span class="plate-num">PLATE I</span>
+      <span class="plate-title">The Diurnal Pulse — Trips by Hour of Day</span>
     </div>
-
-    <!-- 3 smaller cards -->
-    <div class="rh-cards">
-      <div class="rh-card">
-        <div class="rh-card-chart" style="padding-bottom:0;">
-          <canvas id="rh-top5"></canvas>
-        </div>
-        <!-- Icon + name strip — OUTSIDE the canvas, no overlap -->
-        <div id="rh-top5-icons" style="display:flex;justify-content:space-around;align-items:center;padding:6px 12px;border-top:1px solid #eee;background:#fafafa;"></div>
-        <div class="rh-card-body">
-          <!-- <div class="rh-date">APRIL 2026</div> -->
-          <h4>Top 5 platforms hold 59.2% of all US SVOD subscriptions in Q4 2022</h4>
-          <p>Amazon (98.8M), Netflix (67M), Hulu (48M), Paramount+ (46.3M) and Disney+ (41.9M) collectively dominate the landscape.</p>
-        </div>
-      </div>
-      <div class="rh-card">
-        <div class="rh-card-chart">
-          <canvas id="rh-growth"></canvas>
-        </div>
-        <div class="rh-card-body">
-          <!-- <div class="rh-date">APRIL 2026</div> -->
-          <h4>Fox Nation led YoY growth at +133.1%, Peacock Premium +131.2%, Screambox +107.4%</h4>
-          <p>Top YoY growth leaders (Q4 2021 → Q4 2022): Fox Nation (+133.1%), Peacock Premium (+131.2%), Screambox (+107.4%), Crunchyroll (+83.6%), Dropout (+75.7%) and BET+ (+74.6%).</p>
-        </div>
-      </div>
-      <div class="rh-card">
-        <div class="rh-card-chart">
-          <canvas id="rh-netflix"></canvas>
-        </div>
-        <div class="rh-card-body">
-          <!-- <div class="rh-date">APRIL 2026</div> -->
-          <h4>Netflix held flat at 67.0M while Peacock Premium grew +131.2% YoY, a market inflection point</h4>
-          <p>Netflix peaked at 67.8M (Q4 2021) and recovered to only 67.0M by Q4 2022, while Peacock (+131.2%), Paramount+ (+47.8%) and Apple TV+ (+21.9%) each posted strong YoY gains.</p>
-        </div>
-      </div>
+    <div class="inset-body">
+      <div class="chart-canvas-wrap hero"><canvas id="chart-hourly"></canvas></div>
     </div>
+    <div class="inset-margin">
+      <span class="margin-note">Shaded bars at 0700–0900 &amp; 1700–1900 mark the rush hours, when the city slows.</span>
+      <span class="scale-bar">
+        <span class="bar-tick">0</span><span class="bar-line"></span>
+        <span class="bar-tick">12h</span><span class="bar-line"></span>
+        <span class="bar-tick">24h</span>
+      </span>
+    </div>
+  </div>
 
-    <!-- <a href="#dashboard" class="btn-view-all" onclick="event.preventDefault();document.getElementById('dashboard').scrollIntoView({behavior:'smooth'})">VIEW ALL RESEARCH HIGHLIGHTS</a> -->
+  <div class="twin-map">
+    <div class="map-inset">
+      <div class="inset-header">
+        <span class="plate-num">PLATE II</span>
+        <span class="plate-title">Distribution of Trip Durations</span>
+      </div>
+      <div class="inset-body"><div class="chart-canvas-wrap"><canvas id="chart-duration"></canvas></div></div>
+      <div class="inset-margin"><span class="margin-note">Most fares last between 5 and 15 minutes.</span></div>
+    </div>
+    <div class="map-inset">
+      <div class="inset-header">
+        <span class="plate-num">PLATE III</span>
+        <span class="plate-title">Distribution of Trip Velocities</span>
+      </div>
+      <div class="inset-body"><div class="chart-canvas-wrap"><canvas id="chart-speed"></canvas></div></div>
+      <div class="inset-margin"><span class="margin-note">The true velocity of the city is between 10 and 20 km/h.</span></div>
+    </div>
   </div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════════
-     FULL DASHBOARD
-═══════════════════════════════════════════════════════════ -->
-<section class="dashboard-section" id="dashboard">
-  <div class="dashboard-inner">
-    <h2 class="section-title">US SVOD Market Dashboard</h2>
-    <p class="section-desc">Interactive analytics across 131 platforms, Q1 2021 – Q4 2022. Use filters to customise your view.</p>
-
-    <!-- KPI strip -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);border:1px solid #dee2e6;margin-bottom:24px;background:#fff;">
-      <div style="padding:22px 28px;border-right:1px solid #dee2e6;transition:background .15s;" onmouseenter="this.style.background='#f4f5f7';this.style.boxShadow='inset 0 -3px 0 #F7941F'" onmouseleave="this.style.background='';this.style.boxShadow=''">
-        <div style="font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:1.2px;color:#999;margin-bottom:8px;">Total Market (EOY 2022)</div>
-        <div style="font-size:24px;font-weight:900;color:#083050;line-height:1;" id="kpi-eoy22">—</div>
-        <div style="font-size:12px;font-weight:700;color:#27ae60;margin-top:4px;" id="kpi-growth">—</div>
-      </div>
-      <div style="padding:22px 28px;border-right:1px solid #dee2e6;transition:background .15s;" onmouseenter="this.style.background='#f4f5f7';this.style.boxShadow='inset 0 -3px 0 #F7941F'" onmouseleave="this.style.background='';this.style.boxShadow=''">
-        <div style="font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:1.2px;color:#999;margin-bottom:8px;">Platforms Tracked</div>
-        <div style="font-size:24px;font-weight:900;color:#083050;line-height:1;" id="kpi-plat">—</div>
-        <div style="font-size:12px;font-weight:700;color:#999;margin-top:4px;">Active US SVOD services</div>
-      </div>
-      <div style="padding:22px 28px;border-right:1px solid #dee2e6;transition:background .15s;" onmouseenter="this.style.background='#f4f5f7';this.style.boxShadow='inset 0 -3px 0 #F7941F'" onmouseleave="this.style.background='';this.style.boxShadow=''">
-        <div style="font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:1.2px;color:#999;margin-bottom:8px;">Aggregate Pool (All Data)</div>
-        <div style="font-size:24px;font-weight:900;color:#083050;line-height:1;" id="kpi-total">—</div>
-        <div style="font-size:12px;font-weight:700;color:#999;margin-top:4px;">Across all quarterly snapshots</div>
-      </div>
-      <div style="padding:22px 28px;transition:background .15s;" onmouseenter="this.style.background='#f4f5f7';this.style.boxShadow='inset 0 -3px 0 #F7941F'" onmouseleave="this.style.background='';this.style.boxShadow=''">
-        <div style="font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:1.2px;color:#999;margin-bottom:8px;">Data Coverage</div>
-        <div style="font-size:24px;font-weight:900;color:#083050;line-height:1;">8 Quarters</div>
-        <div style="font-size:12px;font-weight:700;color:#999;margin-top:4px;">Q1 2021 — Q4 2022</div>
+<!-- ═══ SHEET B: TEMPORAL CHARTS ═══ -->
+<section class="view" id="view-rhythms">
+  <div class="sheet-intro">
+    <span class="sheet-letter">B</span>
+    <h2 class="sheet-heading">Temporal Charts</h2>
+    <p class="sheet-blurb">A reading of the city's rhythms across the 168 hours of the working week, the seven days, and the six months of our survey period.</p>
+  </div>
+  <div class="map-inset hero">
+    <div class="inset-header">
+      <span class="plate-num">PLATE IV</span>
+      <span class="plate-title">Topographic Density — Hour × Day Activity Map</span>
+    </div>
+    <div class="inset-body">
+      <div class="topo-frame"><div id="heatmap"></div></div>
+    </div>
+    <div class="inset-margin">
+      <div class="legend-strip">
+        <span>FEWER TRIPS</span>
+        <div class="legend-gradient"></div>
+        <span>MORE TRIPS</span>
       </div>
     </div>
-
-    <!-- Filters -->
-    <div class="filter-bar">
-      <div class="fg">
-        <label>Top N Platforms</label>
-        <select id="f-topn">
-          <option value="10">Top 10</option>
-          <option value="15" selected>Top 15</option>
-          <option value="20">Top 20</option>
-          <option value="30">Top 30</option>
-        </select>
-      </div>
-      <!-- <div class="fg" style="min-width:220px;">
-        <label>Trend Platforms <span style="font-weight:400;text-transform:none;letter-spacing:0">(Ctrl/Cmd to multi-select)</span></label>
-        <select id="f-platforms" multiple size="3"></select>
-      </div> -->
-      <!-- <div class="filter-actions">
-        <button class="btn-primary" id="btn-apply">Apply</button>
-        <button class="btn-ghost"   id="btn-reset">Reset</button>
-      </div> -->
+  </div>
+  <div class="trio-map">
+    <div class="map-inset">
+      <div class="inset-header"><span class="plate-num">PLATE V</span><span class="plate-title">Days of the Week</span></div>
+      <div class="inset-body"><div class="chart-canvas-wrap"><canvas id="chart-daily"></canvas></div></div>
     </div>
-
-    <!-- Row 1: Market total + Top platforms (top-chart uses scroll wrapper) -->
-    <div class="chart-row">
-      <div class="chart-card">
-        <h3>Total US SVOD Market Quarterly Subscribers</h3>
-        <p class="sub">Aggregate of all tracked platforms at each quarter-end</p>
-        <div class="chart-box"><canvas id="c-market"></canvas></div>
-        <div class="chart-source">Source: Dataxis</div>
-      </div>
-      <div class="chart-card">
-        <h3>Top Platforms by Subscriber Count</h3>
-        <p class="sub">Latest available data per platform</p>
-        <!-- scroll wrapper: canvas grows inside, outer caps at 560px max -->
-        <div class="chart-box scroll" id="top-chart-wrap">
-          <canvas id="c-top"></canvas>
-        </div>
-        <div id="top-logos" class="logo-strip" style="margin-top:10px;"></div>
-        <div class="chart-source">Source: Dataxis</div>
-      </div>
+    <div class="map-inset">
+      <div class="inset-header"><span class="plate-num">PLATE VI</span><span class="plate-title">Monthly Procession</span></div>
+      <div class="inset-body"><div class="chart-canvas-wrap"><canvas id="chart-monthly"></canvas></div></div>
     </div>
-
-    <!-- Row 2: Platform trends + Market share -->
-    <div class="chart-row">
-      <div class="chart-card">
-        <h3>Platform Subscriber Trends</h3>
-        <p class="sub">Use filters above to select platforms for comparison</p>
-        <div class="chart-box tall"><canvas id="c-trends"></canvas></div>
-        <div class="chart-source">Source: Dataxis</div>
-      </div>
-      <div class="chart-card">
-        <h3>Market Share — Q4 2022</h3>
-        <p class="sub">Share of total subscribers by platform</p>
-        <div class="donut-wrap">
-          <div style="position:relative;height:100%;"><canvas id="c-share"></canvas></div>
-          <div id="share-leg" class="donut-legend"></div>
-        </div>
-        <div class="chart-source">Source: Dataxis</div>
-      </div>
+    <div class="map-inset">
+      <div class="inset-header"><span class="plate-num">PLATE VII</span><span class="plate-title">Passengers per Fare</span></div>
+      <div class="inset-body"><div class="chart-canvas-wrap"><canvas id="chart-passengers"></canvas></div></div>
     </div>
+  </div>
+  <div class="map-inset">
+    <div class="inset-header">
+      <span class="plate-num">PLATE VIII</span>
+      <span class="plate-title">A Comparison of the Two Vendors</span>
+    </div>
+    <div class="inset-body"><div class="chart-canvas-wrap"><canvas id="chart-vendor"></canvas></div></div>
+    <div class="inset-margin"><span class="margin-note">Vendor 1 and Vendor 2 — nearly identical on the street, but distinct in the aggregate.</span></div>
+  </div>
+</section>
 
-    <!-- Row 3: Growth leaders + Declining + Segmentation — three charts in one line -->
-    <div class="chart-row-3">
-      <div class="chart-card">
-        <h3>YoY Growth Leaders 2021→2022</h3>
-        <p class="sub">Platforms &gt;50K subs — Q4 2021 → Q4 2022</p>
-        <div class="chart-box tall"><canvas id="c-growth"></canvas></div>
-        <div class="chart-source">Source: Dataxis</div>
-      </div>
-      <div class="chart-card">
-        <h3>Subscriber Decline : Platforms Under Pressure</h3>
-        <p class="sub">Platforms with net subscriber loss over full tracked period</p>
-        <div class="chart-box tall"><canvas id="c-declining"></canvas></div>
-        <div class="chart-source">Source: Dataxis</div>
-      </div>
-      <div class="chart-card">
-        <h3>Platform Segmentation — Q4 2022</h3>
-        <p class="sub">All 131 platforms by subscriber scale tier</p>
-        <div id="seg-grid" class="seg-cards" style="margin-top:14px;"></div>
-        <div id="seg-bar" class="seg-bar" style="margin-top:14px;"></div>
-        <div class="chart-source" style="margin-top:8px;">Source: Dataxis</div>
+<!-- ═══ SHEET C: BOROUGH PLATES ═══ -->
+<section class="view" id="view-atlas">
+  <div class="sheet-intro">
+    <span class="sheet-letter">C</span>
+    <h2 class="sheet-heading">Borough Plates</h2>
+    <p class="sheet-blurb">A cartography of pickups, ranked by frequency. Midtown's gravitational pull is unmistakable from any vantage.</p>
+  </div>
+  <div class="map-inset hero">
+    <div class="inset-header">
+      <span class="plate-num">PLATE IX</span>
+      <span class="plate-title">Pickup Density by Zone</span>
+    </div>
+    <div class="inset-body"><div class="chart-canvas-wrap tall"><canvas id="chart-zones"></canvas></div></div>
+  </div>
+  <div class="map-inset">
+    <div class="inset-header">
+      <span class="plate-num">PLATE X</span>
+      <span class="plate-title">Zone Register — Full Tabulation</span>
+    </div>
+    <div class="inset-body">
+      <div class="sector-register-wrap">
+        <div id="sector-register"></div>
       </div>
     </div>
   </div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════════
-     DATA EXPLORER
-═══════════════════════════════════════════════════════════ -->
-<section class="explorer-section" id="explorer">
-  <div class="explorer-inner">
-    <h2 class="section-title">Platform Data Explorer</h2>
-    <p class="section-desc" style="margin-bottom:24px;">All 131 platforms, first available snapshot vs latest (Q4 2022) with full growth metrics. Click column headers to sort.</p>
-
-    <div class="exp-bar">
-      <div class="search-box">
-        <input type="text" id="ex-q" placeholder="Search platforms…">
-        <button id="ex-btn"><i class="fas fa-search"></i></button>
+<!-- ═══ SHEET D: FIELD NOTEBOOK ═══ -->
+<section class="view" id="view-ledger">
+  <div class="sheet-intro">
+    <span class="sheet-letter">D</span>
+    <h2 class="sheet-heading">Field Notebook</h2>
+    <p class="sheet-blurb">Individual fare records, sortable and filterable. Each row a brief biography of one journey across the boroughs.</p>
+  </div>
+  <div class="map-inset">
+    <div class="inset-header">
+      <span class="plate-num">PLATE XI</span>
+      <span class="plate-title">The Surveyor's Notebook</span>
+    </div>
+    <div class="inset-body">
+      <div class="filter-strip">
+        <div class="fld">
+          <label>Trip ID</label>
+          <input id="filter-id" type="text" placeholder="contains…" />
+        </div>
+        <div class="fld">
+          <label>Hour</label>
+          <select id="filter-hour"><option value="">— any —</option></select>
+        </div>
+        <div class="fld">
+          <label>Day</label>
+          <select id="filter-day">
+            <option value="">— any —</option>
+            <option value="0">Monday</option><option value="1">Tuesday</option>
+            <option value="2">Wednesday</option><option value="3">Thursday</option>
+            <option value="4">Friday</option><option value="5">Saturday</option>
+            <option value="6">Sunday</option>
+          </select>
+        </div>
+        <div class="fld">
+          <label>Month</label>
+          <select id="filter-month">
+            <option value="">— any —</option>
+            <option value="1">Jan</option><option value="2">Feb</option>
+            <option value="3">Mar</option><option value="4">Apr</option>
+            <option value="5">May</option><option value="6">Jun</option>
+          </select>
+        </div>
+        <div class="fld">
+          <label>Vendor</label>
+          <select id="filter-vendor">
+            <option value="">— both —</option>
+            <option value="1">Vendor I</option><option value="2">Vendor II</option>
+          </select>
+        </div>
+        <div class="fld">
+          <label>Passengers</label>
+          <select id="filter-passengers">
+            <option value="">— any —</option>
+            <option value="1">1</option><option value="2">2</option>
+            <option value="3">3</option><option value="4">4</option>
+            <option value="5">5</option><option value="6">6</option>
+          </select>
+        </div>
+        <div class="fld">
+          <label>Sort by</label>
+          <select id="filter-sort">
+            <option value="trip_duration">Duration</option>            
+            <option value="pickup_datetime">Date</option>
+            <option value="distance_km">Distance</option>
+            <option value="speed_kmh">Velocity</option>
+            <option value="passenger_count">Passengers</option>
+          </select>
+        </div>
+        <div class="fld">
+          <label>Order</label>
+          <select id="filter-order">
+            <option value="DESC">↓ Descending</option>
+            <option value="ASC">↑ Ascending</option>
+          </select>
+        </div>
+        <button class="quill-btn" id="btn-apply">Apply</button>
+        <button class="quill-btn quill-btn--ghost" id="btn-reset">Reset</button>
       </div>
-      <span class="exp-info" id="ex-info"></span>
-    </div>
-
-    <div class="table-wrap">
-      <table class="dx">
-        <thead>
-          <tr>
-            <th style="width:44px">#</th>
-            <th class="sortable" data-f="actor">Platform <span class="arr"></span></th>
-            <th class="sortable" data-f="v21">First Available Subscribers <span class="arr"></span></th>
-            <th class="sortable desc" data-f="v22">Latest Subscribers (Q4 2022) <span class="arr"></span></th>
-            <th class="sortable" data-f="added">Net Added <span class="arr"></span></th>
-            <th class="sortable" data-f="pct">Growth Rate <span class="arr"></span></th>
-          </tr>
-        </thead>
-        <tbody id="ex-body">
-          <tr><td colspan="6" style="text-align:center;padding:40px;color:#aaa;">Loading…</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="pagination">
-      <span id="ex-pg-info"></span>
-      <div id="ex-pg" class="pg-btns"></div>
+      <div id="ledger-table"></div>
+      <div id="ledger-pagination" class="ledger-pagination"></div>
     </div>
   </div>
 </section>
 
+<!-- ═══ SHEET E: MARGINALIA ═══ -->
+<section class="view" id="view-insights">
+  <div class="sheet-intro">
+    <span class="sheet-letter">E</span>
+    <h2 class="sheet-heading">Marginalia</h2>
+    <p class="sheet-blurb">Three findings annotated in the cartographer's hand. Each one a small argument the data was already making.</p>
+  </div>
+  <div id="insights-container"></div>
+</section>
 
-<!-- ═══════════════════════════════════════════════════════════
-     DATAXIS NEWS
-═══════════════════════════════════════════════════════════ -->
-<!-- <section class="news-section" id="news">
-  <div class="news-inner">
-    <h2 class="news-title">Dataxis News</h2>
-    <div class="news-grid"> -->
+</main>
 
-      <!-- Card 1 -->
-      <!-- <div class="news-card">
-        <div class="news-thumb">
-          <div class="news-thumb-solid" style="background:linear-gradient(135deg,#083050 0%,#0d4a73 100%);"></div>
-          <span class="news-thumb-badge">NEW PUBLICATION</span>
-          <span class="news-thumb-title">US SVOD<br>MARKET<br>REPORT</span>
-          <div style="position:absolute;right:0;top:0;bottom:0;width:55%;background:linear-gradient(135deg,#1a5276 0%,#0a3d62 100%);display:flex;align-items:center;justify-content:center;padding:16px;">
-            <span style="color:#F7941F;font-size:28px;font-weight:900;text-align:center;line-height:1.2;">2021<br>–<br>2022</span>
-          </div>
-        </div>
-        <div class="news-body">
-          <span class="labelnews" style="background:#F4941F">Market Intelligence</span>
-          <h5>US SVOD Market Analysis : Full Year Report 2021–2022</h5>
-          <p>Comprehensive quarterly tracking of 131 platforms. Subscriber trends, market share and growth dynamics across the full analysis period.</p>
-          <a href="/report" class="btn-view-more">View Report</a>
-        </div>
-      </div> -->
-
-      <!-- Card 2 -->
-      <!-- <div class="news-card">
-        <div class="news-thumb">
-          <div class="news-thumb-solid" style="background:linear-gradient(135deg,#0d4a73 0%,#1a6fa0 100%);"></div>
-          <span class="news-thumb-badge">NEW MODULE</span>
-          <span class="news-thumb-title">OTT<br>PLATFORMS<br>CTV REACH</span>
-          <div style="position:absolute;right:0;top:0;bottom:0;width:55%;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.15);">
-            <i class="fas fa-tv" style="font-size:56px;color:rgba(255,255,255,.6);"></i>
-          </div>
-        </div>
-        <div class="news-body">
-          <span class="labelnews" style="background:#F4941F">Market Intelligence</span>
-          <h5>New module: OTT platforms CTV reach</h5>
-          <p>OTT platforms CTV reach is now available. Track connected TV adoption across all major US SVOD services.</p>
-          <a href="https://dataxis.com/corporate-dashboard/online-advertising/advanced-advertising/ctv-os-applications/ott-platforms-ctv-reach/" class="btn-view-more" target="_blank">View More</a>
-        </div>
-      </div> -->
-
-      <!-- Card 3 -->
-      <!-- <div class="news-card">
-        <div class="news-thumb">
-          <div class="news-thumb-solid" style="background:linear-gradient(135deg,#14293f 0%,#1a3a57 100%);"></div>
-          <span class="news-thumb-badge">NEW MODULE</span>
-          <span class="news-thumb-title">TV<br>PROGRAMMING<br>ANALYTICS</span>
-          <div style="position:absolute;right:0;top:0;bottom:0;width:55%;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.15);">
-            <i class="fas fa-chart-bar" style="font-size:52px;color:rgba(247,148,31,.7);"></i>
-          </div>
-        </div>
-        <div class="news-body">
-          <span class="labelnews" style="background:#F4941F">Market Intelligence</span>
-          <h5>New Module: TV Programming Analytics</h5>
-          <p>Access essential data detailing content strategies, genre distribution and production volumes across US SVOD platforms.</p>
-          <a href="https://dataxis.com/tv-programming-analytics/" class="btn-view-more" target="_blank">View More</a>
-        </div>
+<footer class="map-colophon">
+  <div class="scale-master">
+    <div class="scale-label">SCALE OF NAUTICAL MILES</div>
+    <div class="scale-graphic">
+      <span class="scale-tick">0</span>
+      <div class="scale-segments">
+        <div class="seg dark"></div><div class="seg"></div>
+        <div class="seg dark"></div><div class="seg"></div>
+        <div class="seg dark"></div>
       </div>
-
+      <span class="scale-tick">5</span>
     </div>
   </div>
-</section> -->
-
-
-<!-- ═══════════════════════════════════════════════════════════
-     FOOTER — exact Dataxis.com
-═══════════════════════════════════════════════════════════ -->
-<footer id="dx-footer">
-  <!-- <div class="footer-inner">
-    <div class="footer-cols">
-      <div class="footer-col">
-        <h2><a href="https://dataxis.com/market-intelligence-services">Market Intelligence</a></h2>
-        <ul>
-          <li><a href="https://dataxis.com/our-data/">Insights &amp; Analytics</a></li>
-          <li><a href="https://dataxis.com/research-highlights/">Research Highlights</a></li>
-          <li><a href="https://dataxis.com/consumer-surveys/">Consumer Surveys</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h2><a href="https://conferences.dataxis.com/" target="_blank">Conferences</a></h2>
-      </div>
-      <div class="footer-col">
-        <h2><a href="https://dataxis.com/advertising">Advertising</a></h2>
-        <ul>
-          <li><a href="https://dataxis.com/whitepapers/">Whitepapers</a></li>
-          <li><a href="https://dataxis.com/advertising/#dataxis-email-blasts">Email Blasts</a></li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <h2><a href="https://dataxis.com/about-us">About Us</a></h2>
-        <ul>
-          <li><a href="https://dataxis.com/about-us/">Our Story</a></li>
-          <li><a href="https://dataxis.com/dataxis-news/">News</a></li>
-          <li><a href="https://dataxis.com/help-and-support/">FAQs</a></li>
-          <li><a href="https://dataxis.com/contact-us/">Contact Us</a></li>
-        </ul>
-      </div>
-    </div> -->
-
-    <div class="footer-bottom">
-      <div class="col-md-9">
-        <div class="copyright-text">
-          <!-- <p>DATAXIS registered in France with number 423 163 385 RCS Paris France with registered office 10 rue Pergolese 75116 – Paris FRANCE.</p> -->
-          <p>&copy; 2026 Dataxis. All Rights Reserved.</p>
-          <div class="social-i">
-            <div class="home-social-media-links menu">
-              <!-- <div class="social-media-linker social-linked-in">
-                <a target="_blank" href="https://www.linkedin.com/company/dataxis">
-                  <i class="fab fa-linkedin" title="LinkedIn"></i>
-                </a>
-              </div>
-              <div class="social-media-linker social-twitter">
-                <a target="_blank" href="https://twitter.com/DataxisResearch">
-                  <img src="https://dataxis.com/wp-content/uploads/2023/09/twitter_24.png" class="twitter-new" title="Twitter"
-                       onerror="this.outerHTML='<i class=\'fab fa-x-twitter\' title=\'X\'></i>'">
-                </a>
-              </div>
-              <div class="social-media-linker social-youtube">
-                <a target="_blank" href="https://www.youtube.com/channel/UCEAuEdixUI0wVV_FibyFivQ">
-                  <i class="fab fa-youtube" title="YouTube"></i>
-                </a>
-              </div>
-              <div class="social-media-linker social-mail">
-                <a href="https://dataxis.com/contact-us/">
-                  <i class="fas fa-envelope" title="Email"></i>
-                </a>
-              </div> -->
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-3" style="text-align:right;">
-        <a href="https://dataxis.com/" title="Dataxis">
-          <img src="https://dataxis.com/wp-content/themes/dataxis%20copy/assets/dataxis-logo.png"
-               alt="Dataxis" class="footer-logo-img"
-               onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
-          <span style="display:none;font-size:2rem;font-weight:900;color:#083050;letter-spacing:-1px;">Dataxis</span>
-        </a>
-      </div>
-    </div>
+  <div class="colophon-text">
+    <p><strong>NYC Taxi Cartographic Atlas</strong> &middot; Surveyed and engraved by Team Blue.</p>
+  </div>
+  <div class="map-mark">
+    <svg viewBox="0 0 60 60" width="48" height="48">
+      <circle cx="30" cy="30" r="26" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="30" y1="6" x2="30" y2="14" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="30" y1="46" x2="30" y2="54" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="6" y1="30" x2="14" y2="30" stroke="currentColor" stroke-width="1.2"/>
+      <line x1="46" y1="30" x2="54" y2="30" stroke="currentColor" stroke-width="1.2"/>
+      <polygon points="30,12 28,30 30,32 32,30" fill="currentColor"/>
+      <polygon points="30,48 32,30 30,28 28,30" fill="none" stroke="currentColor" stroke-width="0.8"/>
+      <text x="30" y="9" text-anchor="middle" font-family="DM Mono" font-size="6" font-weight="700" fill="currentColor">N</text>
+      <text x="30" y="58" text-anchor="middle" font-family="DM Mono" font-size="6" fill="currentColor">S</text>
+      <text x="3" y="32" text-anchor="middle" font-family="DM Mono" font-size="6" fill="currentColor">W</text>
+      <text x="57" y="32" text-anchor="middle" font-family="DM Mono" font-size="6" fill="currentColor">E</text>
+    </svg>
   </div>
 </footer>
+
 <script>
   document.addEventListener('contextmenu', event => event.preventDefault());
   document.addEventListener('keydown', function(e) {
@@ -546,7 +369,6 @@
     }
   });
 </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="js/dashboard.js"></script>
 </body>
 </html>
