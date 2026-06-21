@@ -382,6 +382,11 @@ main { max-width: 1280px; margin: 0 auto; padding: 36px 48px 60px; }
 .margin-table tbody td { padding: 12px 12px; border-bottom: 0.5px dashed var(--ink-faded); border-right: 0.5px dashed var(--ink-faded); color: var(--ink); font-style: italic; font-size: 16px; }
 .margin-table tbody td:last-child { border-right: none; }
 .margin-table tbody tr:last-child td { border-bottom: none; }
+
+.margin-table tbody tr:not(.delta-row):hover {
+  background: var(--paper-deep);
+}
+
 .margin-table tbody td:first-child { background: var(--paper-deep); font-family: var(--mono); font-size: 10px; font-style: normal; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink); font-weight: 700; white-space: nowrap; }
 .margin-table .unit { font-family: var(--mono); font-size: 9px; font-style: normal; color: var(--ink-faded); margin-left: 4px; text-transform: uppercase; letter-spacing: 0.08em; }
 .margin-table tr.delta-row td { background: #d0d0d0; color: var(--ink); font-style: normal; font-family: var(--mono); font-size: 12px; font-weight: 700; border-top: 2px solid var(--ink); }
